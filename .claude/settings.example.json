@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "dotnet run --project \"$CLAUDE_PROJECT_DIR/src/agentmsg\" --no-build -- hook --agent claude-main"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "dotnet run --project \"$CLAUDE_PROJECT_DIR/src/agentmsg\" --no-build -- hook --agent claude-main"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "dotnet run --project \"$CLAUDE_PROJECT_DIR/src/agentmsg\" --no-build -- hook --agent claude-main"
+          }
+        ]
+      }
+    ]
+  }
+}
