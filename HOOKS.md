@@ -32,6 +32,7 @@ Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロ
           {
             "type": "command",
             "command": "\"<install>\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"<install>\\data\\messages.db\"",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& '<install>\\bin\\itoguruma\\itoguruma.exe' hook --agent codex-main --db '<install>\\data\\messages.db'\"",
             "timeout": 15
           }
         ]
@@ -43,6 +44,7 @@ Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロ
           {
             "type": "command",
             "command": "\"<install>\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"<install>\\data\\messages.db\"",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& '<install>\\bin\\itoguruma\\itoguruma.exe' hook --agent codex-main --db '<install>\\data\\messages.db'\"",
             "timeout": 15
           }
         ]
@@ -54,6 +56,7 @@ Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロ
           {
             "type": "command",
             "command": "\"<install>\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"<install>\\data\\messages.db\"",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& '<install>\\bin\\itoguruma\\itoguruma.exe' hook --agent codex-main --db '<install>\\data\\messages.db'\"",
             "timeout": 15
           }
         ]
