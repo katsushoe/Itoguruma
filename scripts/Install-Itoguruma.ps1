@@ -99,6 +99,7 @@ try {
     $requiredFiles = @(
         "bin\server\Itoguruma.Server.exe",
         "bin\itoguruma\itoguruma.exe",
+        "bin\viewer\itoguruma-viewer.exe",
         "examples\claude-settings.json",
         "examples\codex-hooks.json",
         "README.md",
@@ -179,6 +180,7 @@ try {
     Write-Host "Database: $databasePath"
     Write-Host "Claude Code Hook example: $(Join-Path $examplesRoot 'claude-settings.json')"
     Write-Host "Codex Hook example: $(Join-Path $examplesRoot 'codex-hooks.json')"
+    Write-Host "Message Viewer: $(Join-Path $destinationRoot 'bin\viewer\itoguruma-viewer.exe')"
     if (!$NoPath) {
         Write-Host "Open a new terminal to use itoguruma from PATH."
     }

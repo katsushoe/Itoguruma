@@ -37,6 +37,7 @@ if (!$releaseRoot.StartsWith($repoPrefix, [System.StringComparison]::OrdinalIgno
 $payloadRoot = Join-Path $releaseRoot "files"
 $serverRoot = Join-Path $payloadRoot "bin\server"
 $cliRoot = Join-Path $payloadRoot "bin\itoguruma"
+$viewerRoot = Join-Path $payloadRoot "bin\viewer"
 $zipPath = Join-Path $releaseRoot ("Itoguruma-" + $normalizedVersion + "-win-x64.zip")
 $installerPath = Join-Path $releaseRoot "Install-Itoguruma.ps1"
 $checksumPath = Join-Path $releaseRoot "SHA256SUMS.txt"
@@ -45,7 +46,7 @@ if (Test-Path -LiteralPath $releaseRoot) {
     Remove-Item -LiteralPath $releaseRoot -Recurse -Force
 }
 
-New-Item -ItemType Directory -Force -Path $serverRoot, $cliRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $serverRoot, $cliRoot, $viewerRoot | Out-Null
 $publishArguments = @(
     "-c", $Configuration,
     "-r", "win-x64",
@@ -59,6 +60,7 @@ $publishArguments = @(
 )
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Server\Itoguruma.Server.csproj")) + $publishArguments + @("-o", $serverRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Cli\Itoguruma.Cli.csproj")) + $publishArguments + @("-o", $cliRoot))
+Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Viewer\Itoguruma.Viewer.csproj")) + $publishArguments + @("-o", $viewerRoot))
 
 Copy-Item -LiteralPath (Join-Path $repoRoot "README.md") -Destination $payloadRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot "COMMANDS.md") -Destination $payloadRoot
