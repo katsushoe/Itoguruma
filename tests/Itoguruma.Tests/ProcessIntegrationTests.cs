@@ -34,6 +34,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(5, result.Output.Count);
         Assert.All(result.Output, response => Assert.False(response.RootElement.TryGetProperty("error", out _)));
+        Assert.Equal("0.2.0", result.Output[0].RootElement.GetProperty("result")
+            .GetProperty("serverInfo").GetProperty("version").GetString());
         var messages = StructuredData(result.Output[4]);
         var message = Assert.Single(messages.EnumerateArray());
         Assert.Equal("integration message", message.GetProperty("body").GetString());
@@ -98,6 +100,16 @@ public sealed class ProcessIntegrationTests : IDisposable
         });
         Assert.Equal(messageCount, messageIds.Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(messageCount, (await service.GetMessagesAsync("recipient", limit: messageCount)).Count);
+    }
+
+    [Fact]
+    public async Task AgentCli_WhenVersionIsRequested_ReturnsProductVersion()
+    {
+        var result = await RunAsync("itoguruma", ["version"], Path.Combine(_directory, "version.db"), string.Empty);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("itoguruma 0.2.0", result.StandardOutput.Trim());
+        Assert.False(File.Exists(Path.Combine(_directory, "version.db")));
     }
 
     public void Dispose()

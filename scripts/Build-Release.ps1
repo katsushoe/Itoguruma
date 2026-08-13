@@ -53,7 +53,9 @@ $publishArguments = @(
     "-p:PublishSingleFile=true",
     "-p:IncludeNativeLibrariesForSelfExtract=true",
     "-p:DebugType=None",
-    "-p:DebugSymbols=false"
+    "-p:DebugSymbols=false",
+    "-p:Version=$normalizedVersion",
+    "-p:InformationalVersion=$normalizedVersion"
 )
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Server\Itoguruma.Server.csproj")) + $publishArguments + @("-o", $serverRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Cli\Itoguruma.Cli.csproj")) + $publishArguments + @("-o", $cliRoot))
