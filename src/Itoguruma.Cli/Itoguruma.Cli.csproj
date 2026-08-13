@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>agentmsg</AssemblyName></PropertyGroup>
+  <PropertyGroup><OutputType>Exe</OutputType><AssemblyName>itoguruma</AssemblyName></PropertyGroup>
   <ItemGroup><ProjectReference Include="../Itoguruma.Core/Itoguruma.Core.csproj" /></ItemGroup>
 </Project>

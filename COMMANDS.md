@@ -1,28 +1,28 @@
 # Itogurumaコマンド一覧
 
-この文書は、`agentmsg` CLIとMCP Toolのコマンド一覧です。`--db <path>`を省略した場合は、`ITOGURUMA_DB`環境変数、続いてユーザーのLocalApplicationData配下にある既定DBを使用します。
+この文書は、`itoguruma` CLIとMCP Toolのコマンド一覧です。`--db <path>`を省略した場合は、`ITOGURUMA_DB`環境変数、続いてユーザーのLocalApplicationData配下にある既定DBを使用します。
 
 ## CLIコマンド
 
 | コマンド | 必須オプション | 主な任意オプション | 内容 |
 | :--- | :--- | :--- | :--- |
-| `agentmsg register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Agentを登録またはheartbeat更新します。 |
-| `agentmsg agents` | なし | `--db` | 登録済みAgentを一覧表示します。 |
-| `agentmsg send` | `--from`, `--to`, `--body`, `--thread` | `--reply-to`, `--idempotency-key`, `--db` | メッセージを永続化して配送待ちにします。 |
-| `agentmsg inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | 未処理メッセージをleaseして取得します。 |
-| `agentmsg ack` | `--agent`, `--message` | `--db` | lease済みメッセージをACKします。 |
-| `agentmsg hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Claude Code Hook入力を読み、Inboxを標準出力へ追加します。 |
-| `agentmsg --help` | なし | なし | CLI概要を表示します。 |
+| `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Agentを登録またはheartbeat更新します。 |
+| `itoguruma agents` | なし | `--db` | 登録済みAgentを一覧表示します。 |
+| `itoguruma send` | `--from`, `--to`, `--body`, `--thread` | `--reply-to`, `--idempotency-key`, `--db` | メッセージを永続化して配送待ちにします。 |
+| `itoguruma inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | 未処理メッセージをleaseして取得します。 |
+| `itoguruma ack` | `--agent`, `--message` | `--db` | lease済みメッセージをACKします。 |
+| `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Claude Code Hook入力を読み、Inboxを標準出力へ追加します。 |
+| `itoguruma --help` | なし | なし | CLI概要を表示します。 |
 
 ## CLI例
 
 ```powershell
-agentmsg register --agent claude-main --type claude-code
-agentmsg register --agent codex-main --type codex
-agentmsg agents
-agentmsg send --from claude-main --to codex-main --thread setup --body "確認してください" --idempotency-key setup-1
-agentmsg inbox --agent codex-main --lease-seconds 300
-agentmsg ack --agent codex-main --message <messageId>
+itoguruma register --agent claude-main --type claude-code
+itoguruma register --agent codex-main --type codex
+itoguruma agents
+itoguruma send --from claude-main --to codex-main --thread setup --body "確認してください" --idempotency-key setup-1
+itoguruma inbox --agent codex-main --lease-seconds 300
+itoguruma ack --agent codex-main --message <messageId>
 ```
 
 `send`を再試行するときは、同じ論理送信に同じ`--idempotency-key`を渡してください。`inbox`で取得した処理済みメッセージは、必ず`ack`してください。
@@ -49,7 +49,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1 [-Version <vers
 | :--- | :--- |
 | `-Version` | `latest`または取得するReleaseバージョンを指定します。既定は`latest`です。 |
 | `-InstallDirectory` | インストール先を指定します。既定は`%LOCALAPPDATA%\Programs\Itoguruma`です。 |
-| `-NoPath` | `agentmsg`のユーザーPATH登録を省略します。 |
+| `-NoPath` | `itoguruma`のユーザーPATH登録を省略します。 |
 | `-SkipCodex` | CodexへのMCP登録を省略します。 |
 | `-SkipClaude` | Claude CodeへのユーザースコープMCP登録を省略します。 |
 

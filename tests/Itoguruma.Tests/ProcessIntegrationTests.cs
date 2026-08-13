@@ -59,14 +59,14 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.RegisterAgentAsync("recipient", "test");
         await service.SendMessageAsync(new("sender", ["recipient"], "prompt message", "hook"));
 
-        var prompt = await RunAsync("agentmsg", ["hook", "--agent", "recipient"], databasePath,
+        var prompt = await RunAsync("itoguruma", ["hook", "--agent", "recipient"], databasePath,
             "{\"hook_event_name\":\"UserPromptSubmit\"}");
 
         Assert.Equal(0, prompt.ExitCode);
         Assert.Contains("prompt message", prompt.StandardOutput, StringComparison.Ordinal);
         await service.SendMessageAsync(new("sender", ["recipient"], "stop message", "hook"));
 
-        var stop = await RunAsync("agentmsg", ["hook", "--agent", "recipient", "--lease-seconds", "-1"],
+        var stop = await RunAsync("itoguruma", ["hook", "--agent", "recipient", "--lease-seconds", "-1"],
             databasePath, "{\"hook_event_name\":\"Stop\"}");
 
         Assert.Equal(2, stop.ExitCode);
@@ -84,7 +84,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.RegisterAgentAsync("recipient", "test");
 
         var sends = await Task.WhenAll(Enumerable.Range(0, messageCount).Select(index =>
-            RunAsync("agentmsg",
+            RunAsync("itoguruma",
             [
                 "send", "--from", "sender", "--to", "recipient", "--thread", "process-stress",
                 "--body", $"message-{index}", "--idempotency-key", $"process-{index}"
@@ -165,8 +165,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         var configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent?.Name
             ?? throw new InvalidOperationException("Build configuration was not found.");
         var repositoryRoot = FindRepositoryRoot();
-        var projectDirectory = application == "agentmsg"
-            ? Path.Combine(repositoryRoot, "src", "agentmsg")
+        var projectDirectory = application == "itoguruma"
+            ? Path.Combine(repositoryRoot, "src", "Itoguruma.Cli")
             : Path.Combine(repositoryRoot, "src", application);
         var path = Path.Combine(projectDirectory, "bin", configuration, "net8.0", $"{application}.dll");
         return File.Exists(path) ? path : throw new FileNotFoundException("Application assembly was not found.", path);

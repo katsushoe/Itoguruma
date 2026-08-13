@@ -62,7 +62,7 @@ try {
 
     $extractRoot = Join-Path $temporaryRoot "files"
     Expand-Archive -LiteralPath $archivePath -DestinationPath $extractRoot -Force
-    $requiredFiles = @("bin\server\Itoguruma.Server.exe", "bin\agentmsg\agentmsg.exe", "README.md", "COMMANDS.md")
+    $requiredFiles = @("bin\server\Itoguruma.Server.exe", "bin\itoguruma\itoguruma.exe", "README.md", "COMMANDS.md", "HOOKS.md")
     foreach ($relativePath in $requiredFiles) {
         if (!(Test-Path -LiteralPath (Join-Path $extractRoot $relativePath) -PathType Leaf)) {
             throw "The binary ZIP is incomplete. Missing file: $relativePath"
@@ -74,8 +74,8 @@ try {
     $dataRoot = Join-Path $destinationRoot "data"
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 
-    $cliDirectory = Join-Path $destinationRoot "bin\agentmsg"
-    & (Join-Path $cliDirectory "agentmsg.exe") --help | Out-Null
+    $cliDirectory = Join-Path $destinationRoot "bin\itoguruma"
+    & (Join-Path $cliDirectory "itoguruma.exe") --help | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Installation verification failed."
     }
@@ -90,6 +90,20 @@ try {
 
     $serverPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
     $databasePath = Join-Path $dataRoot "messages.db"
+    $hookCommand = '"' + (Join-Path $cliDirectory "itoguruma.exe") + '" hook --agent claude-main --db "' + $databasePath + '"'
+    $hookEntry = @{
+        hooks = @(@{ type = "command"; command = $hookCommand; timeout = 15 })
+    }
+    $hookSettings = @{
+        hooks = @{
+            SessionStart = @($hookEntry)
+            UserPromptSubmit = @($hookEntry)
+            Stop = @($hookEntry)
+        }
+    }
+    $examplesRoot = Join-Path $destinationRoot "examples"
+    New-Item -ItemType Directory -Force -Path $examplesRoot | Out-Null
+    $hookSettings | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "claude-settings.json") -Encoding utf8
     if (!$SkipCodex) {
         $codex = Get-Command codex -ErrorAction SilentlyContinue
         if ($null -ne $codex) {
@@ -107,8 +121,9 @@ try {
 
     Write-Host "Itoguruma installed: $destinationRoot"
     Write-Host "Database: $databasePath"
+    Write-Host "Claude Code Hook example: $(Join-Path $examplesRoot 'claude-settings.json')"
     if (!$NoPath) {
-        Write-Host "Open a new terminal to use agentmsg from PATH."
+        Write-Host "Open a new terminal to use itoguruma from PATH."
     }
     Write-Host "Restart Codex and Claude Code before using the MCP server."
 }
