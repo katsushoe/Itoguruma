@@ -2,9 +2,88 @@
 
 Claude Code、Codexなどの独立したAIエージェント間で、SQLiteを正本としてメッセージを交換するMCP stdioサーバーです。
 
+## 配布物
+
+GitHub Releasesでは、利用目的ごとに配布物を分けます。
+
+| 配布物 | 対象 | .NET 8 SDK |
+| :--- | :--- | :---: |
+| `Install-Itoguruma.ps1` | 通常利用者向けインストーラ | 不要 |
+| `Itoguruma-x.x.x-win-x64.zip` | 手動配置・オフライン利用向けself-containedバイナリ | 不要 |
+| `Source code (zip/tar.gz)` | 開発者向けソース配布 | 必要 |
+
+コマンドの詳細は[COMMANDS.md](COMMANDS.md)を参照してください。
+
+## インストーラ版
+
+GitHub Releasesから`Install-Itoguruma.ps1`をダウンロードし、PowerShellで実行します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
+```
+
+インストーラは次の処理を行います。
+
+- 最新のWindows x64バイナリZIPを取得
+- `%LOCALAPPDATA%\Programs\Itoguruma`へ配置
+- `%LOCALAPPDATA%\Programs\Itoguruma\data\messages.db`を共有DBとして準備
+- `agentmsg`をユーザーPATHへ登録
+- インストール済みのCodexとClaude Codeへ`itoguruma` MCPを登録
+
+完了後、新しいターミナルを開き、CodexとClaude Codeを再起動してください。既存のDBは上書き・削除しません。インストーラのオプションは[コマンド一覧](COMMANDS.md#インストーラオプション)を参照してください。
+
+## バイナリZIP版
+
+`Itoguruma-x.x.x-win-x64.zip`を任意のディレクトリへ展開します。ZIPは.NETランタイムを同梱するため、.NET 8 SDKは不要です。
+
+```text
+bin/
+├─ server/Itoguruma.Server.exe
+└─ agentmsg/agentmsg.exe
+examples/claude-settings.json
+README.md
+COMMANDS.md
+```
+
+手動登録では、`<install>`を展開先の絶対パスに置き換えます。
+
+```powershell
+codex mcp add itoguruma --env "ITOGURUMA_DB=<install>\data\messages.db" -- "<install>\bin\server\Itoguruma.Server.exe"
+claude mcp add --scope user --env "ITOGURUMA_DB=<install>\data\messages.db" itoguruma -- "<install>\bin\server\Itoguruma.Server.exe"
+```
+
+## ソース版
+
+ソースからビルドする開発者だけが.NET 8 SDKを必要とします。
+
+```powershell
+dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj
+dotnet build tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-restore
+dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
+```
+
+配布物をローカル生成する場合:
+
+```powershell
+.\scripts\Build-Release.ps1 -Version 0.1.0
+```
+
+## 初期設定と往復確認
+
+```powershell
+agentmsg register --agent claude-main --type claude-code
+agentmsg register --agent codex-main --type codex
+agentmsg send --from claude-main --to codex-main --thread setup-check --body "疎通確認" --idempotency-key setup-check-1
+agentmsg inbox --agent codex-main --lease-seconds 300
+agentmsg ack --agent codex-main --message <messageId>
+```
+
+各セッションからMCP Toolを使う場合も、最初に`register_agent`を呼び出します。受信処理が完了したメッセージは必ずACKしてください。ACK前に受信側が停止した場合、lease期限後に再配送されます。送信再試行では同じ`idempotency_key`を使用してください。
+
+Claude Code Hookを使う場合は、インストール先の`examples/claude-settings.json`を参考に、既存の設定へ`hooks`を統合してください。
+
 ## 主な機能
 
-- `register_agent` / `list_agents` / `send_message` / `get_messages` / `ack_message`
 - append-onlyのメッセージ本文と、分離した`pending → leased → acked`配送状態
 - lease期限切れによるat-least-once再配送
 - sender単位の`idempotency_key`による重複送信防止
@@ -12,81 +91,4 @@ Claude Code、Codexなどの独立したAIエージェント間で、SQLiteを�
 - thread、reply-to、複数宛先
 - Claude Code Hookから利用できる`agentmsg` CLI
 
-## 必要環境
-
-- Windows 10/11
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Claude CodeまたはCodex CLI
-
-以降のコマンドは、リポジトリのルートをカレントディレクトリとしてPowerShellで実行します。
-
-## 1. ビルド
-
-```powershell
-dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj
-dotnet build tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-restore
-dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
-dotnet publish src/Itoguruma.Server -c Release -r win-x64 --self-contained false -o artifacts/server
-dotnet publish src/agentmsg -c Release -r win-x64 --self-contained false -o artifacts/agentmsg
-New-Item -ItemType Directory -Force data | Out-Null
-```
-
-生成物は`artifacts/server/Itoguruma.Server.exe`と`artifacts/agentmsg/agentmsg.exe`です。Claude CodeとCodexには、同じ`data/messages.db`を指定します。
-
-## 2. Codexへ登録
-
-`<repo>`をこのリポジトリの絶対パスへ置き換えます。
-
-```powershell
-codex mcp add itoguruma --env "ITOGURUMA_DB=<repo>\data\messages.db" -- "<repo>\artifacts\server\Itoguruma.Server.exe"
-codex mcp list
-```
-
-すでに`itoguruma`が登録されている場合は、`codex mcp remove itoguruma`を実行してから再登録します。登録後にCodexを再起動してください。
-
-## 3. Claude Codeへ登録
-
-リポジトリ同梱の[`.mcp.json`](.mcp.json)は、公開済みServerと`data/messages.db`を使用します。Claude Codeをこのリポジトリで起動し、MCP Serverの利用確認が表示されたら承認してください。
-
-Hookを初めて設定する場合は、設定例をコピーします。
-
-```powershell
-Copy-Item .claude/settings.example.json .claude/settings.json
-```
-
-既存の`.claude/settings.json`がある場合は上書きせず、[設定例](.claude/settings.example.json)の`hooks`を統合してください。設定例はSessionStart、UserPromptSubmit、Stopで`claude-main`のInboxを確認します。設定後にClaude Codeを再起動してください。
-
-## 4. Agent登録
-
-```powershell
-artifacts/agentmsg/agentmsg.exe register --db data/messages.db --agent claude-main --type claude-code
-artifacts/agentmsg/agentmsg.exe register --db data/messages.db --agent codex-main --type codex
-artifacts/agentmsg/agentmsg.exe agents --db data/messages.db
-```
-
-各セッションからMCP Toolを使う場合も、最初に`register_agent`を呼び出します。同じAgent IDでの再登録はheartbeat更新として扱われます。
-
-## 5. 往復確認
-
-まずCLIでClaude側からCodex側へ送信します。
-
-```powershell
-artifacts/agentmsg/agentmsg.exe send --db data/messages.db --from claude-main --to codex-main --thread setup-check --body "疎通確認" --idempotency-key setup-check-1
-artifacts/agentmsg/agentmsg.exe inbox --db data/messages.db --agent codex-main --lease-seconds 300
-```
-
-Inbox出力の`messageId`を使ってACKし、逆方向へ返信します。
-
-```powershell
-artifacts/agentmsg/agentmsg.exe ack --db data/messages.db --agent codex-main --message <messageId>
-artifacts/agentmsg/agentmsg.exe send --db data/messages.db --from codex-main --to claude-main --thread setup-check --body "受信しました" --idempotency-key setup-check-2
-artifacts/agentmsg/agentmsg.exe inbox --db data/messages.db --agent claude-main --lease-seconds 300
-```
-
-受信処理が完了したメッセージは必ず`ack_message`またはCLIの`ack`でACKします。ACK前に受信側が停止した場合、lease期限後に再配送されます。送信再試行では同じ`idempotency_key`を使用してください。
-
-## 設計と対象範囲
-
-MCP Tool → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。自動テストでは双方向通信、ACK、lease再配送、プロセス再起動後の永続化、冪等送信、MCP/Hookのプロセス結合を検証します。
-
-Idle状態のAgentを起こすSupervisor、Task/Project管理、Broadcast、検索、Web UI、HTTP HubはMVPの対象外です。
+MCP Tool → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。Idle状態のAgentを起こすSupervisor、Task/Project管理、Broadcast、検索、Web UI、HTTP HubはMVPの対象外です。
