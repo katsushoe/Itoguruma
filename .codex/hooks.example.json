@@ -1,0 +1,38 @@
+{
+  "description": "Check the Itoguruma inbox during the Codex lifecycle.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "itoguruma hook --agent codex-main",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "itoguruma hook --agent codex-main",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "itoguruma hook --agent codex-main",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

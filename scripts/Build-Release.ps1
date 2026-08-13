@@ -66,6 +66,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "HOOKS.md") -Destination $payloadRoo
 $examplesRoot = Join-Path $payloadRoot "examples"
 New-Item -ItemType Directory -Force -Path $examplesRoot | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot ".claude\settings.example.json") -Destination (Join-Path $examplesRoot "claude-settings.json")
+Copy-Item -LiteralPath (Join-Path $repoRoot ".codex\hooks.example.json") -Destination (Join-Path $examplesRoot "codex-hooks.json")
 
 Compress-Archive -Path (Join-Path $payloadRoot "*") -DestinationPath $zipPath -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "scripts\Install-Itoguruma.ps1") -Destination $installerPath

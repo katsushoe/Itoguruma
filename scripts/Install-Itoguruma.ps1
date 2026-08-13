@@ -62,7 +62,15 @@ try {
 
     $extractRoot = Join-Path $temporaryRoot "files"
     Expand-Archive -LiteralPath $archivePath -DestinationPath $extractRoot -Force
-    $requiredFiles = @("bin\server\Itoguruma.Server.exe", "bin\itoguruma\itoguruma.exe", "README.md", "COMMANDS.md", "HOOKS.md")
+    $requiredFiles = @(
+        "bin\server\Itoguruma.Server.exe",
+        "bin\itoguruma\itoguruma.exe",
+        "examples\claude-settings.json",
+        "examples\codex-hooks.json",
+        "README.md",
+        "COMMANDS.md",
+        "HOOKS.md"
+    )
     foreach ($relativePath in $requiredFiles) {
         if (!(Test-Path -LiteralPath (Join-Path $extractRoot $relativePath) -PathType Leaf)) {
             throw "The binary ZIP is incomplete. Missing file: $relativePath"
@@ -90,20 +98,26 @@ try {
 
     $serverPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
     $databasePath = Join-Path $dataRoot "messages.db"
-    $hookCommand = '"' + (Join-Path $cliDirectory "itoguruma.exe") + '" hook --agent claude-main --db "' + $databasePath + '"'
-    $hookEntry = @{
-        hooks = @(@{ type = "command"; command = $hookCommand; timeout = 15 })
-    }
-    $hookSettings = @{
-        hooks = @{
-            SessionStart = @($hookEntry)
-            UserPromptSubmit = @($hookEntry)
-            Stop = @($hookEntry)
+    $cliPath = Join-Path $cliDirectory "itoguruma.exe"
+    function New-HookSettings {
+        param([string]$AgentId)
+
+        $hookCommand = '"' + $cliPath + '" hook --agent ' + $AgentId + ' --db "' + $databasePath + '"'
+        $hookEntry = @{
+            hooks = @(@{ type = "command"; command = $hookCommand; timeout = 15 })
+        }
+        return @{
+            hooks = @{
+                SessionStart = @($hookEntry)
+                UserPromptSubmit = @($hookEntry)
+                Stop = @($hookEntry)
+            }
         }
     }
     $examplesRoot = Join-Path $destinationRoot "examples"
     New-Item -ItemType Directory -Force -Path $examplesRoot | Out-Null
-    $hookSettings | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "claude-settings.json") -Encoding utf8
+    New-HookSettings "claude-main" | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "claude-settings.json") -Encoding utf8
+    New-HookSettings "codex-main" | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "codex-hooks.json") -Encoding utf8
     if (!$SkipCodex) {
         $codex = Get-Command codex -ErrorAction SilentlyContinue
         if ($null -ne $codex) {
@@ -122,6 +136,7 @@ try {
     Write-Host "Itoguruma installed: $destinationRoot"
     Write-Host "Database: $databasePath"
     Write-Host "Claude Code Hook example: $(Join-Path $examplesRoot 'claude-settings.json')"
+    Write-Host "Codex Hook example: $(Join-Path $examplesRoot 'codex-hooks.json')"
     if (!$NoPath) {
         Write-Host "Open a new terminal to use itoguruma from PATH."
     }

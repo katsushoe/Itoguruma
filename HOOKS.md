@@ -14,7 +14,13 @@ codex mcp list
 
 一覧に`itoguruma`が表示されれば、Codexから`register_agent`、`get_messages`、`ack_message`、`send_message`などのMCP Toolを使用できます。MCP登録とHook設定は別です。
 
-Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロジェクト設定の`.codex\hooks.json`からHookを読み込みます。現在のインストーラはCodex用Hookファイルを自動生成しないため、次の例を保存してください。`YOUR_NAME`は実際のWindowsユーザー名へ置き換えます。
+Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロジェクト設定の`.codex\hooks.json`からHookを読み込みます。インストーラは、実際のCLIとDBの絶対パスを埋め込んだ設定例を次へ生成します。
+
+```text
+%LOCALAPPDATA%\Programs\Itoguruma\examples\codex-hooks.json
+```
+
+生成されたJSONは次の構造です。
 
 ```json
 {
@@ -25,7 +31,7 @@ Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロ
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\data\\messages.db\"",
+            "command": "\"<install>\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"<install>\\data\\messages.db\"",
             "timeout": 15
           }
         ]
@@ -36,7 +42,7 @@ Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロ
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\data\\messages.db\"",
+            "command": "\"<install>\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"<install>\\data\\messages.db\"",
             "timeout": 15
           }
         ]
@@ -47,7 +53,7 @@ Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロ
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\data\\messages.db\"",
+            "command": "\"<install>\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"<install>\\data\\messages.db\"",
             "timeout": 15
           }
         ]
@@ -57,7 +63,7 @@ Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロ
 }
 ```
 
-既存の`hooks.json`がある場合は上書きせず、`hooks`内の各イベントへItogurumaのエントリを追加します。プロジェクト設定を使う場合、Codexは初回または設定変更後にHookの信頼確認を求めます。内容を確認して承認してください。
+`<install>`は説明用表記です。インストーラが生成するファイルには実際のインストール先が入ります。既存の`hooks.json`がある場合は上書きせず、`hooks`内の各イベントへItogurumaのエントリを追加します。プロジェクト設定を使う場合、Codexは初回または設定変更後にHookの信頼確認を求めます。内容を確認して承認してください。
 
 Codex用Agentを登録し、CLIから手動で確認・ACKする場合は次を実行します。
 
