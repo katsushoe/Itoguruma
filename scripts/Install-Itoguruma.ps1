@@ -22,6 +22,40 @@ function Invoke-ClientCommand {
     }
 }
 
+function Invoke-DownloadFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Uri,
+        [Parameter(Mandatory = $true)]
+        [string]$Destination,
+        [int]$MaximumAttempts = 3,
+        [int]$TimeoutSeconds = 300
+    )
+
+    $originalProgressPreference = $ProgressPreference
+    try {
+        # Windows PowerShell 5.1 can become extremely slow while rendering
+        # Invoke-WebRequest progress for large release assets.
+        $ProgressPreference = "SilentlyContinue"
+        for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
+            try {
+                Invoke-WebRequest -Uri $Uri -OutFile $Destination -Headers @{ "User-Agent" = "Itoguruma-Installer" } -TimeoutSec $TimeoutSeconds
+                return
+            }
+            catch {
+                Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+                if ($attempt -eq $MaximumAttempts) {
+                    throw
+                }
+                Start-Sleep -Seconds ([Math]::Pow(2, $attempt - 1))
+            }
+        }
+    }
+    finally {
+        $ProgressPreference = $originalProgressPreference
+    }
+}
+
 try {
     New-Item -ItemType Directory -Force -Path $temporaryRoot | Out-Null
     $archivePath = Join-Path $temporaryRoot "package.zip"
@@ -40,7 +74,7 @@ try {
         if ($null -eq $asset) {
             throw "Release asset was not found: $assetName"
         }
-        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -Headers @{ "User-Agent" = "Itoguruma-Installer" }
+        Invoke-DownloadFile -Uri $asset.browser_download_url -Destination $archivePath
         $checksumAsset = $release.assets | Where-Object { $_.name -eq "SHA256SUMS.txt" } | Select-Object -First 1
         if ($null -eq $checksumAsset) {
             throw "Release checksum asset was not found."
