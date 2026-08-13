@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "dotnet run --project \"$CLAUDE_PROJECT_DIR/src/agentmsg\" --no-build -- hook --agent claude-main"
+            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/agentmsg/agentmsg.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\""
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "dotnet run --project \"$CLAUDE_PROJECT_DIR/src/agentmsg\" --no-build -- hook --agent claude-main"
+            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/agentmsg/agentmsg.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\""
           }
         ]
       }
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "dotnet run --project \"$CLAUDE_PROJECT_DIR/src/agentmsg\" --no-build -- hook --agent claude-main"
+            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/agentmsg/agentmsg.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\""
           }
         ]
       }
