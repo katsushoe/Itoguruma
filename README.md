@@ -96,7 +96,7 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 配布物をローカル生成する場合:
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version 0.2.0
+.\scripts\Build-Release.ps1 -Version 0.2.1
 ```
 
 ## 初期設定と往復確認
