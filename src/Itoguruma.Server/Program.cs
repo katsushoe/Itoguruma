@@ -26,7 +26,7 @@ internal sealed class McpServer(MessagingService service, TextReader input, Text
                 if (id is null && method is "notifications/initialized") continue;
                 object result = method switch
                 {
-                    "initialize" => new { protocolVersion = "2025-03-26", capabilities = new { tools = new { } }, serverInfo = new { name = "itoguruma", version = "0.1.0" } },
+                    "initialize" => new { protocolVersion = "2025-03-26", capabilities = new { tools = new { } }, serverInfo = new { name = "itoguruma", version = ProductInfo.Version } },
                     "ping" => new { },
                     "tools/list" => new { tools = ToolDefinitions.All },
                     "tools/call" => await CallToolAsync(root.GetProperty("params"), cancellationToken),

@@ -12,6 +12,7 @@
 | `itoguruma inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | 未処理メッセージをleaseして取得します。 |
 | `itoguruma ack` | `--agent`, `--message` | `--db` | lease済みメッセージをACKします。 |
 | `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Claude Code Hook入力を読み、Inboxを標準出力へ追加します。 |
+| `itoguruma version` | なし | なし | 製品バージョンを表示します。 |
 | `itoguruma --help` | なし | なし | CLI概要を表示します。 |
 
 ## CLI例
@@ -19,6 +20,7 @@
 ```powershell
 itoguruma register --agent claude-main --type claude-code
 itoguruma register --agent codex-main --type codex
+itoguruma version
 itoguruma agents
 itoguruma send --from claude-main --to codex-main --thread setup --body "確認してください" --idempotency-key setup-1
 itoguruma inbox --agent codex-main --lease-seconds 300

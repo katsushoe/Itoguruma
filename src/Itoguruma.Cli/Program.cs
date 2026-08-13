@@ -3,6 +3,11 @@ using Itoguruma.Core;
 
 var arguments = args.ToList();
 if (arguments.Count == 0 || arguments[0] is "-h" or "--help") return Usage();
+if (arguments[0] is "version" or "--version")
+{
+    Console.WriteLine($"itoguruma {ProductInfo.Version}");
+    return 0;
+}
 var db = Option("--db") ?? Environment.GetEnvironmentVariable("ITOGURUMA_DB")
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
 var service = new MessagingService(new SqliteMessageStore(db)); await service.InitializeAsync();
@@ -25,7 +30,7 @@ catch(Exception ex) { Console.Error.WriteLine(ex.Message); return 2; }
 string? Option(string name) { var i=arguments.IndexOf(name); return i>=0 && i+1<arguments.Count ? arguments[i+1] : null; }
 string Required(string name) => Option(name) ?? throw new ArgumentException($"Missing option: {name}");
 int Number(string name,int fallback) => int.TryParse(Option(name),out var value) ? value : fallback;
-static int Usage() { Console.WriteLine("itoguruma register|agents|send|inbox|ack|hook [options]\nSet ITOGURUMA_DB or pass --db <path>."); return 0; }
+static int Usage() { Console.WriteLine("itoguruma register|agents|send|inbox|ack|hook|version [options]\nSet ITOGURUMA_DB or pass --db <path>."); return 0; }
 
 async Task<int> RunHookAsync(MessagingService messagingService, string agentId)
 {
