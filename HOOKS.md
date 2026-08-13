@@ -1,10 +1,42 @@
-# Claude Code Hook設定
+# Inbox連携設定
 
 ItogurumaのHookは、Claude CodeのSessionStart、UserPromptSubmit、Stopで`itoguruma hook`を実行し、共有SQLite Inboxの新着をClaude Codeへ通知します。
 
 Codexには同等のライフサイクルHookがないため、Codex側はMCPの`get_messages`またはCLIの`itoguruma inbox`を使います。
 
-## インストーラ版
+## Codex設定
+
+インストーラ版は、Codexがインストール済みであればItoguruma MCPを自動登録します。インストール後にCodexを再起動し、次のコマンドで登録を確認します。
+
+```powershell
+codex mcp list
+```
+
+一覧に`itoguruma`が表示されれば、Codexから`register_agent`、`get_messages`、`ack_message`、`send_message`などのMCP Toolを使用できます。
+
+CodexにはClaude CodeのSessionStart、UserPromptSubmit、Stopに相当するHookがありません。Inboxを定期的に確認させる場合は、プロジェクトの`AGENTS.md`へ次のような運用ルールを追加します。既存の`AGENTS.md`がある場合は、内容を上書きせず追記してください。
+
+```markdown
+## Itoguruma Inbox
+
+- セッション開始時に、Itoguruma MCPの`register_agent`で`codex-main`を登録または更新する。
+- 各ターンの開始時に、`get_messages`を`agent_id: codex-main`で呼び出して新着を確認する。
+- メッセージの処理が完了した後にだけ、`ack_message`でACKする。
+- ACK前に処理できなかったメッセージはACKせず、lease期限後の再配送に任せる。
+- `send_message`を再試行するときは、同じ`idempotency_key`を使用する。
+```
+
+CLIから手動で確認・ACKする場合は次を実行します。
+
+```powershell
+itoguruma register --agent codex-main --type codex
+itoguruma inbox --agent codex-main --lease-seconds 300
+itoguruma ack --agent codex-main --message <messageId>
+```
+
+`AGENTS.md`はCodexへの作業指示であり、外部イベントによる実行中ターンへの割り込みやidle状態からの自動wakeを提供するものではありません。Codexが動作していない間もメッセージはSQLiteに残り、次回のInbox確認時に配送されます。
+
+## Claude Code: インストーラ版
 
 インストーラは、実際のCLIとDBの絶対パスを埋め込んだ設定例を次へ生成します。
 
@@ -23,7 +55,7 @@ Copy-Item "$env:LOCALAPPDATA\Programs\Itoguruma\examples\claude-settings.json" .
 
 インストール先を変更した場合、設定例も指定したインストール先の`examples\claude-settings.json`に生成されます。
 
-## ソース版
+## Claude Code: ソース版
 
 リポジトリの[`.claude/settings.example.json`](.claude/settings.example.json)を`.claude/settings.json`へコピーします。先に次の場所へCLIをpublishしてください。
 
@@ -31,7 +63,7 @@ Copy-Item "$env:LOCALAPPDATA\Programs\Itoguruma\examples\claude-settings.json" .
 dotnet publish src/Itoguruma.Cli -c Release -r win-x64 --self-contained true -o artifacts/itoguruma
 ```
 
-## Hookごとの動作
+## Claude Code: Hookごとの動作
 
 | Hook | 動作 |
 | :--- | :--- |
@@ -47,7 +79,7 @@ itoguruma ack --agent claude-main --message <messageId>
 
 ACK前にClaude Codeが停止した場合、lease期限後に再配送されます。
 
-## 動作確認
+## Claude Code: 動作確認
 
 Claude Code用Agentを登録し、テストメッセージを送ります。
 
