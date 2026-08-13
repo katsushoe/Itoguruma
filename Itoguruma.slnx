@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/Itoguruma.Core/Itoguruma.Core.csproj" />
+  <Project Path="src/Itoguruma.Server/Itoguruma.Server.csproj" />
+  <Project Path="src/agentmsg/agentmsg.csproj" />
+  <Project Path="tests/Itoguruma.Tests/Itoguruma.Tests.csproj" />
+</Solution>
