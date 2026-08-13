@@ -11,7 +11,7 @@
 | `itoguruma send` | `--from`, `--to`, `--body`, `--thread` | `--reply-to`, `--idempotency-key`, `--db` | メッセージを永続化して配送待ちにします。 |
 | `itoguruma inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | 未処理メッセージをleaseして取得します。 |
 | `itoguruma ack` | `--agent`, `--message` | `--db` | lease済みメッセージをACKします。 |
-| `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Claude Code Hook入力を読み、Inboxを標準出力へ追加します。 |
+| `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Claude Code／Codex Hook入力を読み、InboxをHook出力へ追加します。 |
 | `itoguruma version` | なし | なし | 製品バージョンを表示します。 |
 | `itoguruma --help` | なし | なし | CLI概要を表示します。 |
 

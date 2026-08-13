@@ -42,7 +42,7 @@ GitHub Releasesでは、利用目的ごとに配布物を分けます。
 | `Itoguruma-x.x.x-win-x64.zip` | 手動配置・オフライン利用向けself-containedバイナリ | 不要 |
 | `Source code (zip/tar.gz)` | 開発者向けソース配布 | 必要 |
 
-コマンドの詳細は[COMMANDS.md](COMMANDS.md)、Claude Code Hookの導入手順は[HOOKS.md](HOOKS.md)を参照してください。
+コマンドの詳細は[COMMANDS.md](COMMANDS.md)、Claude Code／Codex Hookの導入手順は[HOOKS.md](HOOKS.md)を参照してください。
 
 ## インストーラ版
 
@@ -71,6 +71,7 @@ bin/
 ├─ server/Itoguruma.Server.exe
 └─ itoguruma/itoguruma.exe
 examples/claude-settings.json
+examples/codex-hooks.json
 README.md
 COMMANDS.md
 ```
@@ -110,7 +111,7 @@ itoguruma ack --agent codex-main --message <messageId>
 
 各セッションからMCP Toolを使う場合も、最初に`register_agent`を呼び出します。受信処理が完了したメッセージは必ずACKしてください。ACK前に受信側が停止した場合、lease期限後に再配送されます。送信再試行では同じ`idempotency_key`を使用してください。
 
-Claude Code Hookを使う場合は、インストーラが生成する`examples/claude-settings.json`を既存設定へ統合します。設定場所、Hookごとの動作、ACK、疎通確認は[Hook設定ガイド](HOOKS.md)を参照してください。
+Hookを使う場合は、インストーラが生成する`examples/claude-settings.json`または`examples/codex-hooks.json`を既存設定へ統合します。設定場所、Hookごとの動作、ACK、疎通確認は[Hook設定ガイド](HOOKS.md)を参照してください。
 
 ## 主な機能
 
@@ -119,6 +120,6 @@ Claude Code Hookを使う場合は、インストーラが生成する`examples/
 - sender単位の`idempotency_key`による重複送信防止
 - WAL、FULL同期、外部キー、5秒のbusy timeout
 - thread、reply-to、複数宛先
-- Claude Code Hookから利用できる`itoguruma` CLI
+- Claude Code／Codex Hookから利用できる`itoguruma` CLI
 
 MCP Tool → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。Idle状態のAgentを起こすSupervisor、Task/Project管理、Broadcast、検索、Web UI、HTTP HubはMVPの対象外です。
