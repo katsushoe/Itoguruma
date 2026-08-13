@@ -36,7 +36,7 @@ if (!$releaseRoot.StartsWith($repoPrefix, [System.StringComparison]::OrdinalIgno
 
 $payloadRoot = Join-Path $releaseRoot "files"
 $serverRoot = Join-Path $payloadRoot "bin\server"
-$cliRoot = Join-Path $payloadRoot "bin\agentmsg"
+$cliRoot = Join-Path $payloadRoot "bin\itoguruma"
 $zipPath = Join-Path $releaseRoot ("Itoguruma-" + $normalizedVersion + "-win-x64.zip")
 $installerPath = Join-Path $releaseRoot "Install-Itoguruma.ps1"
 $checksumPath = Join-Path $releaseRoot "SHA256SUMS.txt"
@@ -56,10 +56,11 @@ $publishArguments = @(
     "-p:DebugSymbols=false"
 )
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Server\Itoguruma.Server.csproj")) + $publishArguments + @("-o", $serverRoot))
-Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\agentmsg\agentmsg.csproj")) + $publishArguments + @("-o", $cliRoot))
+Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Cli\Itoguruma.Cli.csproj")) + $publishArguments + @("-o", $cliRoot))
 
 Copy-Item -LiteralPath (Join-Path $repoRoot "README.md") -Destination $payloadRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot "COMMANDS.md") -Destination $payloadRoot
+Copy-Item -LiteralPath (Join-Path $repoRoot "HOOKS.md") -Destination $payloadRoot
 $examplesRoot = Join-Path $payloadRoot "examples"
 New-Item -ItemType Directory -Force -Path $examplesRoot | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot ".claude\settings.example.json") -Destination (Join-Path $examplesRoot "claude-settings.json")

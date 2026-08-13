@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/agentmsg/agentmsg.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\"",
+            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/itoguruma/itoguruma.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\"",
             "timeout": 15
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/agentmsg/agentmsg.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\"",
+            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/itoguruma/itoguruma.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\"",
             "timeout": 15
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/agentmsg/agentmsg.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\"",
+            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/itoguruma/itoguruma.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\"",
             "timeout": 15
           }
         ]

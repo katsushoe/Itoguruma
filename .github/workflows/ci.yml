@@ -34,13 +34,13 @@ jobs:
       - name: Restore dependencies
         run: |
           dotnet restore src/Itoguruma.Server/Itoguruma.Server.csproj
-          dotnet restore src/agentmsg/agentmsg.csproj
+          dotnet restore src/Itoguruma.Cli/Itoguruma.Cli.csproj
           dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj
 
       - name: Build
         run: |
           dotnet build src/Itoguruma.Server/Itoguruma.Server.csproj --configuration Release --no-restore
-          dotnet build src/agentmsg/agentmsg.csproj --configuration Release --no-restore
+          dotnet build src/Itoguruma.Cli/Itoguruma.Cli.csproj --configuration Release --no-restore
           dotnet build tests/Itoguruma.Tests/Itoguruma.Tests.csproj --configuration Release --no-restore
 
       - name: Test
