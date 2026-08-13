@@ -103,8 +103,16 @@ try {
         param([string]$AgentId)
 
         $hookCommand = '"' + $cliPath + '" hook --agent ' + $AgentId + ' --db "' + $databasePath + '"'
+        $cliPowerShellPath = $cliPath.Replace("'", "''")
+        $databasePowerShellPath = $databasePath.Replace("'", "''")
+        $hookCommandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ''' + $cliPowerShellPath + ''' hook --agent ' + $AgentId + ' --db ''' + $databasePowerShellPath + '''"'
         $hookEntry = @{
-            hooks = @(@{ type = "command"; command = $hookCommand; timeout = 15 })
+            hooks = @(@{
+                type = "command"
+                command = $hookCommand
+                commandWindows = $hookCommandWindows
+                timeout = 15
+            })
         }
         return @{
             hooks = @{
