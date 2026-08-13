@@ -5,27 +5,29 @@ Claude Code、Codexなどの独立したAIエージェント間で、SQLiteを�
 ## ユースケース
 
 ```mermaid
-flowchart TB
-    Claude["Claude Code"]
-    Codex["Codex"]
-
-    subgraph Itoguruma["Itoguruma"]
-        Send["Messaging MCPへ送信"]
-        Store[("共有SQLiteへ永続化")]
-        ClaudeInbox["Claude CodeのInbox"]
-        CodexInbox["CodexのInbox"]
-        Deliver["MCPまたはHookで新着を受信"]
+flowchart LR
+    subgraph Agents["AI Agents"]
+        direction TB
+        Claude["Claude Code"]
+        Codex["Codex"]
     end
 
-    Claude -- "Codex宛メッセージ" --> Send
-    Codex -- "Claude Code宛メッセージ" --> Send
-    Send --> Store
-    Store -- "宛先: claude-main" --> ClaudeInbox
-    Store -- "宛先: codex-main" --> CodexInbox
-    ClaudeInbox --> Deliver
-    CodexInbox --> Deliver
-    Deliver -- "Claude Codeへ通知" --> Claude
-    Deliver -- "Codexへ通知" --> Codex
+    subgraph Itoguruma["Itoguruma MCP Server"]
+        direction TB
+        Messaging["メッセージ送受信"]
+        Store[("共有SQLite")]
+        ClaudeInbox["Claude CodeのInbox"]
+        CodexInbox["CodexのInbox"]
+
+        Messaging --> Store
+        Store --> ClaudeInbox
+        Store --> CodexInbox
+    end
+
+    Claude -- "Codex宛を送信" --> Messaging
+    Codex -- "Claude Code宛を送信" --> Messaging
+    ClaudeInbox -- "MCP／Hookで受信" --> Claude
+    CodexInbox -- "MCP／Hookで受信" --> Codex
 ```
 
 Claude CodeとCodexは送信側・受信側のどちらにもなれます。送信されたメッセージは共有SQLiteへ保存され、宛先AgentのInboxに並びます。受信側はMCP ToolまたはライフサイクルHookでInboxの新着を受け取ります。相手が停止中でもメッセージは消えず、次回のInbox確認時に配信されます。
