@@ -2,56 +2,91 @@
 
 Claude Code、Codexなどの独立したAIエージェント間で、SQLiteを正本としてメッセージを交換するMCP stdioサーバーです。
 
-## 機能
+## 主な機能
 
 - `register_agent` / `list_agents` / `send_message` / `get_messages` / `ack_message`
-- WAL + FULL同期、外部キー、5秒のbusy timeout
-- append-onlyのメッセージ本文と、分離した配送状態
+- append-onlyのメッセージ本文と、分離した`pending → leased → acked`配送状態
 - lease期限切れによるat-least-once再配送
-- thread、reply-to、複数宛先
 - sender単位の`idempotency_key`による重複送信防止
-- Hookから利用できる`agentmsg hook --agent <id>` CLI
+- WAL、FULL同期、外部キー、5秒のbusy timeout
+- thread、reply-to、複数宛先
+- Claude Code Hookから利用できる`agentmsg` CLI
 
-## MVP受入条件
+## 必要環境
 
-自動テストで、双方向の往復とACK、lease期限切れ再配送、Store再生成後の未処理保持、同一冪等キーの並行送信を検証します。実際のClaude Code/Codexセッションを使う最終確認は、両クライアントへMCP設定を導入した環境で行います。
+- Windows 10/11
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- Claude CodeまたはCodex CLI
 
-## ビルドとテスト
+以降のコマンドは、リポジトリのルートをカレントディレクトリとしてPowerShellで実行します。
+
+## 1. ビルド
 
 ```powershell
-dotnet restore Itoguruma.slnx
-dotnet build Itoguruma.slnx --no-restore
-dotnet test Itoguruma.slnx --no-build
+dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj
+dotnet build tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-restore
+dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 dotnet publish src/Itoguruma.Server -c Release -r win-x64 --self-contained false -o artifacts/server
 dotnet publish src/agentmsg -c Release -r win-x64 --self-contained false -o artifacts/agentmsg
+New-Item -ItemType Directory -Force data | Out-Null
 ```
 
-## MCP設定
+生成物は`artifacts/server/Itoguruma.Server.exe`と`artifacts/agentmsg/agentmsg.exe`です。Claude CodeとCodexには、同じ`data/messages.db`を指定します。
 
-`ITOGURUMA_DB`にはClaude/Codex双方から見える同じ絶対パスを設定します。このリポジトリにはClaude Code用`.mcp.json`とHook用`.claude/settings.json`が含まれます。Codexは`codex mcp add itoguruma --env ITOGURUMA_DB=<db> -- <server.exe>`でユーザー設定へ登録します。公開後に各クライアントをこのリポジトリで再起動してください。
+## 2. Codexへ登録
 
-```json
-{
-  "mcpServers": {
-    "itoguruma": {
-      "command": "dotnet",
-      "args": ["run", "--project", "<repo>/src/Itoguruma.Server"],
-      "env": { "ITOGURUMA_DB": "<shared-path>/messages.db" }
-    }
-  }
-}
-```
-
-CLI例:
+`<repo>`をこのリポジトリの絶対パスへ置き換えます。
 
 ```powershell
-dotnet run --project src/agentmsg -- register --agent codex-main --type codex
-dotnet run --project src/agentmsg -- hook --agent codex-main
-dotnet run --project src/agentmsg -- send --from claude-main --to codex-main --thread auth --body "確認してください" --idempotency-key request-123
+codex mcp add itoguruma --env "ITOGURUMA_DB=<repo>\data\messages.db" -- "<repo>\artifacts\server\Itoguruma.Server.exe"
+codex mcp list
 ```
 
-`hook`は未処理メッセージをleaseしてJSONで標準出力します。受信処理の完了後に`ack --agent <id> --message <message_id>`を実行してください。送信側は論理的な送信要求ごとに安定した`idempotency_key`を生成し、再試行時に同じ値を渡します。
+すでに`itoguruma`が登録されている場合は、`codex mcp remove itoguruma`を実行してから再登録します。登録後にCodexを再起動してください。
 
-Claude Code向けのSessionStart/UserPromptSubmit/Stop設定例は[`.claude/settings.example.json`](.claude/settings.example.json)です。SessionStart/UserPromptSubmitでは新着をコンテキストへ追加し、Stop時に新着を検出した場合は終了を止めて処理を継続させます。利用前にビルドし、例を`.claude/settings.json`へ統合してください。Codex側は現行の公式設定で同等のライフサイクルHookを確認できないため、MCP Toolまたは明示的な`agentmsg hook`呼び出しを使います。
+## 3. Claude Codeへ登録
 
-MCP Tool → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。Idle状態のエージェントを起こすSupervisor機能、Task/Project管理、HTTP HubはMVPの対象外です。
+リポジトリ同梱の[`.mcp.json`](.mcp.json)は、公開済みServerと`data/messages.db`を使用します。Claude Codeをこのリポジトリで起動し、MCP Serverの利用確認が表示されたら承認してください。
+
+Hookを初めて設定する場合は、設定例をコピーします。
+
+```powershell
+Copy-Item .claude/settings.example.json .claude/settings.json
+```
+
+既存の`.claude/settings.json`がある場合は上書きせず、[設定例](.claude/settings.example.json)の`hooks`を統合してください。設定例はSessionStart、UserPromptSubmit、Stopで`claude-main`のInboxを確認します。設定後にClaude Codeを再起動してください。
+
+## 4. Agent登録
+
+```powershell
+artifacts/agentmsg/agentmsg.exe register --db data/messages.db --agent claude-main --type claude-code
+artifacts/agentmsg/agentmsg.exe register --db data/messages.db --agent codex-main --type codex
+artifacts/agentmsg/agentmsg.exe agents --db data/messages.db
+```
+
+各セッションからMCP Toolを使う場合も、最初に`register_agent`を呼び出します。同じAgent IDでの再登録はheartbeat更新として扱われます。
+
+## 5. 往復確認
+
+まずCLIでClaude側からCodex側へ送信します。
+
+```powershell
+artifacts/agentmsg/agentmsg.exe send --db data/messages.db --from claude-main --to codex-main --thread setup-check --body "疎通確認" --idempotency-key setup-check-1
+artifacts/agentmsg/agentmsg.exe inbox --db data/messages.db --agent codex-main --lease-seconds 300
+```
+
+Inbox出力の`messageId`を使ってACKし、逆方向へ返信します。
+
+```powershell
+artifacts/agentmsg/agentmsg.exe ack --db data/messages.db --agent codex-main --message <messageId>
+artifacts/agentmsg/agentmsg.exe send --db data/messages.db --from codex-main --to claude-main --thread setup-check --body "受信しました" --idempotency-key setup-check-2
+artifacts/agentmsg/agentmsg.exe inbox --db data/messages.db --agent claude-main --lease-seconds 300
+```
+
+受信処理が完了したメッセージは必ず`ack_message`またはCLIの`ack`でACKします。ACK前に受信側が停止した場合、lease期限後に再配送されます。送信再試行では同じ`idempotency_key`を使用してください。
+
+## 設計と対象範囲
+
+MCP Tool → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。自動テストでは双方向通信、ACK、lease再配送、プロセス再起動後の永続化、冪等送信、MCP/Hookのプロセス結合を検証します。
+
+Idle状態のAgentを起こすSupervisor、Task/Project管理、Broadcast、検索、Web UI、HTTP HubはMVPの対象外です。
