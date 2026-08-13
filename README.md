@@ -2,6 +2,38 @@
 
 Claude Code、Codexなどの独立したAIエージェント間で、SQLiteを正本としてメッセージを交換するMCP stdioサーバーです。
 
+## ユースケース
+
+```mermaid
+flowchart LR
+    Claude["Claude Code"]
+    Codex["Codex"]
+
+    subgraph Itoguruma["Itoguruma Messaging MCP"]
+        Register(["Agentを登録・heartbeat更新"])
+        Send(["メッセージを重複なく送信"])
+        Receive(["Inboxからメッセージをlease"])
+        Ack(["処理完了をACK"])
+        Redeliver(["lease期限切れを再配送"])
+        Hook(["ライフサイクルHookで新着確認"])
+    end
+
+    Claude --- Register
+    Codex --- Register
+    Claude --- Send
+    Codex --- Send
+    Claude --- Receive
+    Codex --- Receive
+    Claude --- Ack
+    Codex --- Ack
+    Claude --- Hook
+    Codex --- Hook
+    Receive -. "ACKされず期限切れ" .-> Redeliver
+    Redeliver -.-> Receive
+```
+
+Claude CodeとCodexは送信側・受信側のどちらにもなれます。受信時に配送をleaseし、処理完了後にACKします。ACKされないままlease期限が切れたメッセージは再配送されます。
+
 ## 配布物
 
 GitHub Releasesでは、利用目的ごとに配布物を分けます。
