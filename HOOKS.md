@@ -1,32 +1,65 @@
 # Inbox連携設定
 
-ItogurumaのHookは、Claude CodeのSessionStart、UserPromptSubmit、Stopで`itoguruma hook`を実行し、共有SQLite Inboxの新着をClaude Codeへ通知します。
+ItogurumaのHookは、Claude CodeとCodexのSessionStart、UserPromptSubmit、Stopで`itoguruma hook`を実行し、共有SQLite Inboxの新着をエージェントへ通知します。
 
-Codexには同等のライフサイクルHookがないため、Codex側はMCPの`get_messages`またはCLIの`itoguruma inbox`を使います。
+CodexのHook仕様と設定形式は[OpenAI公式Hooksドキュメント](https://developers.openai.com/codex/hooks)を参照してください。
 
 ## Codex設定
 
-インストーラ版は、Codexがインストール済みであればItoguruma MCPを自動登録します。インストール後にCodexを再起動し、次のコマンドで登録を確認します。
+インストーラ版は、Codexがインストール済みであればItoguruma MCPを自動登録します。インストール後にCodexを再起動し、次のコマンドでMCP登録を確認します。
 
 ```powershell
 codex mcp list
 ```
 
-一覧に`itoguruma`が表示されれば、Codexから`register_agent`、`get_messages`、`ack_message`、`send_message`などのMCP Toolを使用できます。
+一覧に`itoguruma`が表示されれば、Codexから`register_agent`、`get_messages`、`ack_message`、`send_message`などのMCP Toolを使用できます。MCP登録とHook設定は別です。
 
-CodexにはClaude CodeのSessionStart、UserPromptSubmit、Stopに相当するHookがありません。Inboxを定期的に確認させる場合は、プロジェクトの`AGENTS.md`へ次のような運用ルールを追加します。既存の`AGENTS.md`がある場合は、内容を上書きせず追記してください。
+Codexはユーザー設定の`%USERPROFILE%\.codex\hooks.json`、またはプロジェクト設定の`.codex\hooks.json`からHookを読み込みます。現在のインストーラはCodex用Hookファイルを自動生成しないため、次の例を保存してください。`YOUR_NAME`は実際のWindowsユーザー名へ置き換えます。
 
-```markdown
-## Itoguruma Inbox
-
-- セッション開始時に、Itoguruma MCPの`register_agent`で`codex-main`を登録または更新する。
-- 各ターンの開始時に、`get_messages`を`agent_id: codex-main`で呼び出して新着を確認する。
-- メッセージの処理が完了した後にだけ、`ack_message`でACKする。
-- ACK前に処理できなかったメッセージはACKせず、lease期限後の再配送に任せる。
-- `send_message`を再試行するときは、同じ`idempotency_key`を使用する。
+```json
+{
+  "description": "Check the Itoguruma inbox during the Codex lifecycle.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\data\\messages.db\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\data\\messages.db\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\bin\\itoguruma\\itoguruma.exe\" hook --agent codex-main --db \"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\Itoguruma\\data\\messages.db\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-CLIから手動で確認・ACKする場合は次を実行します。
+既存の`hooks.json`がある場合は上書きせず、`hooks`内の各イベントへItogurumaのエントリを追加します。プロジェクト設定を使う場合、Codexは初回または設定変更後にHookの信頼確認を求めます。内容を確認して承認してください。
+
+Codex用Agentを登録し、CLIから手動で確認・ACKする場合は次を実行します。
 
 ```powershell
 itoguruma register --agent codex-main --type codex
@@ -34,7 +67,9 @@ itoguruma inbox --agent codex-main --lease-seconds 300
 itoguruma ack --agent codex-main --message <messageId>
 ```
 
-`AGENTS.md`はCodexへの作業指示であり、外部イベントによる実行中ターンへの割り込みやidle状態からの自動wakeを提供するものではありません。Codexが動作していない間もメッセージはSQLiteに残り、次回のInbox確認時に配送されます。
+Codexでは、SessionStartとUserPromptSubmitの標準出力が追加のdeveloper contextとしてモデルへ渡されます。Stopで新着が見つかった場合は、`itoguruma hook`が終了コード`2`と継続理由を返し、Codexに処理継続を促します。
+
+Hookは任意のタイミングで実行中のモデル処理へ割り込む機能ではありません。バックグラウンドHookがidle中に完了しても新しいターンは開始されません。Codexが動作していない間もメッセージはSQLiteに残り、次回のHook実行時に配送されます。
 
 ## Claude Code: インストーラ版
 
@@ -63,21 +98,21 @@ Copy-Item "$env:LOCALAPPDATA\Programs\Itoguruma\examples\claude-settings.json" .
 dotnet publish src/Itoguruma.Cli -c Release -r win-x64 --self-contained true -o artifacts/itoguruma
 ```
 
-## Claude Code: Hookごとの動作
+## Hookごとの動作
 
 | Hook | 動作 |
 | :--- | :--- |
-| `SessionStart` | Claude Codeのセッション開始時にInboxを確認し、新着をコンテキストへ追加します。 |
+| `SessionStart` | セッション開始時にInboxを確認し、新着をコンテキストへ追加します。 |
 | `UserPromptSubmit` | ユーザーがプロンプトを送信した時点でInboxを確認し、新着をコンテキストへ追加します。 |
 | `Stop` | 応答終了時に新着があれば終了コード`2`を返し、標準エラーへ新着を出して処理継続を促します。 |
 
-Hookはメッセージを`leased`にしますが、自動ACKはしません。Claude Codeが処理を完了した後、MCPの`ack_message`または次のCLIでACKします。
+Hookはメッセージを`leased`にしますが、自動ACKはしません。エージェントが処理を完了した後、MCPの`ack_message`または次のCLIでACKします。
 
 ```powershell
-itoguruma ack --agent claude-main --message <messageId>
+itoguruma ack --agent <agentId> --message <messageId>
 ```
 
-ACK前にClaude Codeが停止した場合、lease期限後に再配送されます。
+ACK前にエージェントが停止した場合、lease期限後に再配送されます。
 
 ## Claude Code: 動作確認
 
