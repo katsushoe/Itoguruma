@@ -5,4 +5,5 @@ obj/
 *.db-wal
 .vs/
 artifacts/
+release/
 data/

@@ -73,6 +73,33 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("stop message", stop.StandardError, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task AgentCli_WhenProcessesSendConcurrently_PersistsEveryMessage()
+    {
+        const int messageCount = 12;
+        var databasePath = Path.Combine(_directory, "process-stress.db");
+        var service = new MessagingService(new SqliteMessageStore(databasePath));
+        await service.InitializeAsync();
+        await service.RegisterAgentAsync("sender", "test");
+        await service.RegisterAgentAsync("recipient", "test");
+
+        var sends = await Task.WhenAll(Enumerable.Range(0, messageCount).Select(index =>
+            RunAsync("agentmsg",
+            [
+                "send", "--from", "sender", "--to", "recipient", "--thread", "process-stress",
+                "--body", $"message-{index}", "--idempotency-key", $"process-{index}"
+            ], databasePath, string.Empty)));
+
+        Assert.All(sends, result => Assert.Equal(0, result.ExitCode));
+        var messageIds = sends.Select(result =>
+        {
+            using var document = JsonDocument.Parse(result.StandardOutput);
+            return document.RootElement.GetProperty("message_id").GetString();
+        });
+        Assert.Equal(messageCount, messageIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(messageCount, (await service.GetMessagesAsync("recipient", limit: messageCount)).Count);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, true);
