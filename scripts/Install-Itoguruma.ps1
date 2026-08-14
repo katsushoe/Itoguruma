@@ -100,6 +100,7 @@ try {
         "bin\server\Itoguruma.Server.exe",
         "bin\itoguruma\itoguruma.exe",
         "bin\viewer\itoguruma-viewer.exe",
+        "bin\stop-codex\stop-codex.exe",
         "examples\claude-settings.json",
         "examples\codex-hooks.json",
         "README.md",
@@ -118,17 +119,25 @@ try {
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 
     $cliDirectory = Join-Path $destinationRoot "bin\itoguruma"
+    $stopCodexDirectory = Join-Path $destinationRoot "bin\stop-codex"
     & (Join-Path $cliDirectory "itoguruma.exe") --help | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Installation verification failed."
+    }
+    & (Join-Path $stopCodexDirectory "stop-codex.exe") --list | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "stop-codex installation verification failed."
     }
 
     if (!$NoPath) {
         $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
         $pathEntries = @($userPath -split ";" | Where-Object { ![string]::IsNullOrWhiteSpace($_) })
-        if (!($pathEntries | Where-Object { $_.TrimEnd("\") -ieq $cliDirectory.TrimEnd("\") })) {
-            [Environment]::SetEnvironmentVariable("Path", (($pathEntries + $cliDirectory) -join ";"), "User")
+        foreach ($pathDirectory in @($cliDirectory, $stopCodexDirectory)) {
+            if (!($pathEntries | Where-Object { $_.TrimEnd("\") -ieq $pathDirectory.TrimEnd("\") })) {
+                $pathEntries += $pathDirectory
+            }
         }
+        [Environment]::SetEnvironmentVariable("Path", ($pathEntries -join ";"), "User")
     }
 
     $serverPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
@@ -181,8 +190,9 @@ try {
     Write-Host "Claude Code Hook example: $(Join-Path $examplesRoot 'claude-settings.json')"
     Write-Host "Codex Hook example: $(Join-Path $examplesRoot 'codex-hooks.json')"
     Write-Host "Message Viewer: $(Join-Path $destinationRoot 'bin\viewer\itoguruma-viewer.exe')"
+    Write-Host "Codex process stopper: $(Join-Path $stopCodexDirectory 'stop-codex.exe')"
     if (!$NoPath) {
-        Write-Host "Open a new terminal to use itoguruma from PATH."
+        Write-Host "Open a new terminal to use itoguruma and stop-codex from PATH."
     }
     Write-Host "Restart Codex and Claude Code before using the MCP server."
 }

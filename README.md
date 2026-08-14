@@ -57,7 +57,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
 - 最新のWindows x64バイナリZIPを取得
 - `%LOCALAPPDATA%\Programs\Itoguruma`へ配置
 - `%LOCALAPPDATA%\Programs\Itoguruma\data\messages.db`を共有DBとして準備
-- `itoguruma`をユーザーPATHへ登録
+- `itoguruma`と`stop-codex`をユーザーPATHへ登録
 - インストール済みのCodexとClaude Codeへ`itoguruma` MCPを登録
 - 読み取り専用メッセージビューワーを配置
 
@@ -71,7 +71,8 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
 bin/
 ├─ server/Itoguruma.Server.exe
 ├─ itoguruma/itoguruma.exe
-└─ viewer/itoguruma-viewer.exe
+├─ viewer/itoguruma-viewer.exe
+└─ stop-codex/stop-codex.exe
 examples/claude-settings.json
 examples/codex-hooks.json
 README.md
@@ -98,7 +99,7 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 配布物をローカル生成する場合:
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version 0.3.0
+.\scripts\Build-Release.ps1 -Version 0.3.1
 ```
 
 ## 初期設定と往復確認
@@ -121,6 +122,13 @@ Hookを使う場合は、インストーラが生成する`examples/claude-setti
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Itoguruma\bin\viewer\itoguruma-viewer.exe"
+```
+
+Codex本体と関連プロセスを強制終了する場合は`stop-codex`を使用します。実行前に対象だけを確認できます。
+
+```powershell
+stop-codex --list
+stop-codex
 ```
 
 ビューワーでは、メッセージの送信元・宛先・thread・本文、`pending`／`leased`／`acked`の配送状態、lease期限、ACK時刻を確認できます。状態・Agent・キーワードで絞り込みでき、既定では2秒間隔で自動更新します。DBを更新せず、メッセージをleaseまたはACKしません。別のDBを開く場合は画面上部の「参照」または第1コマンドライン引数で指定します。
