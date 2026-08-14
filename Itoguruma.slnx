@@ -3,5 +3,6 @@
   <Project Path="src/Itoguruma.Server/Itoguruma.Server.csproj" />
   <Project Path="src/Itoguruma.Cli/Itoguruma.Cli.csproj" />
   <Project Path="src/Itoguruma.Viewer/Itoguruma.Viewer.csproj" />
+  <Project Path="src/Itoguruma.StopCodex/Itoguruma.StopCodex.csproj" />
   <Project Path="tests/Itoguruma.Tests/Itoguruma.Tests.csproj" />
 </Solution>
