@@ -34,7 +34,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(5, result.Output.Count);
         Assert.All(result.Output, response => Assert.False(response.RootElement.TryGetProperty("error", out _)));
-        Assert.Equal("0.2.1", result.Output[0].RootElement.GetProperty("result")
+        Assert.Equal("0.3.1", result.Output[0].RootElement.GetProperty("result")
             .GetProperty("serverInfo").GetProperty("version").GetString());
         var messages = StructuredData(result.Output[4]);
         var message = Assert.Single(messages.EnumerateArray());
@@ -49,6 +49,53 @@ public sealed class ProcessIntegrationTests : IDisposable
 
         Assert.True(StructuredData(acknowledgement.Output[0]).GetProperty("acked").GetBoolean());
         Assert.Empty(StructuredData(acknowledgement.Output[1]).EnumerateArray());
+    }
+
+    [Fact]
+    public async Task McpServer_WhenMessageReferencesUnknownAgent_ReturnsAiFriendlyJsonError()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-error.db");
+        var requests = new[]
+        {
+            ToolRequest(1, "register_agent", new { agent_id = "sender", agent_type = "test" }),
+            ToolRequest(2, "send_message", new
+            {
+                sender_agent_id = "sender",
+                recipient = "missing-recipient",
+                body = "integration message",
+                thread_id = "integration",
+                idempotency_key = "integration-unknown-recipient"
+            })
+        };
+
+        var result = await RunAsync("Itoguruma.Server", requests, databasePath);
+
+        Assert.Equal(0, result.ExitCode);
+        var error = result.Output[1].RootElement.GetProperty("error");
+        Assert.Equal(-32603, error.GetProperty("code").GetInt32());
+        Assert.Contains("not registered", error.GetProperty("message").GetString(), StringComparison.Ordinal);
+        var data = error.GetProperty("data");
+        Assert.Equal("reference_not_found", data.GetProperty("errorCode").GetString());
+        Assert.Equal("sqlite/table/write/reference_key", data.GetProperty("category").GetString());
+        Assert.Contains("Register every sender and recipient agent",
+            data.GetProperty("suggestedAction").GetString(), StringComparison.Ordinal);
+        Assert.True(data.GetProperty("retryable").GetBoolean());
+    }
+
+    [Fact]
+    public async Task McpServer_WhenToolsAreListed_DescribesErrorCategoryCatalog()
+    {
+        var result = await RunAsync("Itoguruma.Server",
+            [Request(1, "tools/list", new { })], Path.Combine(_directory, "mcp-tools.db"));
+
+        Assert.Equal(0, result.ExitCode);
+        var tools = result.Output[0].RootElement.GetProperty("result").GetProperty("tools");
+        var sendMessage = tools.EnumerateArray().Single(tool =>
+            tool.GetProperty("name").GetString() == "send_message");
+        var description = sendMessage.GetProperty("description").GetString();
+        Assert.Contains("| Category | Meaning | Recommended response |", description, StringComparison.Ordinal);
+        Assert.Contains("`sqlite/table/write/reference_key`", description, StringComparison.Ordinal);
+        Assert.Contains("`internal`", description, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -108,7 +155,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var result = await RunAsync("itoguruma", ["version"], Path.Combine(_directory, "version.db"), string.Empty);
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal("itoguruma 0.2.1", result.StandardOutput.Trim());
+        Assert.Equal("itoguruma 0.3.1", result.StandardOutput.Trim());
         Assert.False(File.Exists(Path.Combine(_directory, "version.db")));
     }
 
