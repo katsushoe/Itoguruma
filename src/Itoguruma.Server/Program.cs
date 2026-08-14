@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Itoguruma.Core;
+using Microsoft.Data.Sqlite;
 
 var databasePath = Environment.GetEnvironmentVariable("ITOGURUMA_DB")
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
@@ -37,7 +38,8 @@ internal sealed class McpServer(MessagingService service, TextReader input, Text
             catch (Exception ex)
             {
                 var rpc = ex as RpcException;
-                await WriteAsync(new { jsonrpc = "2.0", id, error = new { code = rpc?.Code ?? -32603, message = ex.Message } });
+                var error = RpcError.From(ex, rpc?.Code ?? -32603);
+                await WriteAsync(new { jsonrpc = "2.0", id, error });
             }
         }
     }
@@ -71,14 +73,56 @@ internal sealed class McpServer(MessagingService service, TextReader input, Text
 
 internal sealed class RpcException(int code, string message) : Exception(message) { public int Code { get; } = code; }
 
+internal sealed record RpcError(int Code, string Message, RpcErrorData Data)
+{
+    public static RpcError From(Exception exception, int code)
+    {
+        if (exception is SqliteException { SqliteErrorCode: 19 })
+        {
+            return new(code, "The message references an agent or message that is not registered.", new(
+                "reference_not_found",
+                "sqlite/table/write/reference_key",
+                "Itoguruma rejected the message because a referenced sender, recipient, or reply target does not exist.",
+                "Register every sender and recipient agent, verify reply_to_message_id when supplied, then retry with the same idempotency_key.",
+                true));
+        }
+
+        return new(code, exception.Message, new(
+            "internal_error",
+            "request_processing",
+            "Itoguruma could not complete the requested operation.",
+            "Review the error message and request arguments before retrying.",
+            false));
+    }
+}
+
+internal sealed record RpcErrorData(
+    string ErrorCode,
+    string Category,
+    string Summary,
+    string SuggestedAction,
+    bool Retryable);
+
 internal static class ToolDefinitions
 {
+    private const string SendMessageDescription = """
+        Persist and enqueue a message idempotently.
+
+        Error category catalog:
+        | Category | Meaning | Recommended response |
+        |---|---|---|
+        | `sqlite/table/write/reference_key` | A sender, recipient, or reply target does not exist. | Register missing agents or correct the reply target, then retry with the same `idempotency_key`. |
+        | `internal` | The operation failed for an unclassified internal reason. | Inspect `message`, `summary`, and `suggestedAction`; do not retry automatically when `retryable` is false. |
+
+        Treat category values as stable hierarchical identifiers. Use `errorCode` for the specific condition and `retryable` to decide whether an automatic retry is permitted.
+        """;
+
     private static object Tool(string name,string description,object properties,string[]? required=null) => new { name,description,inputSchema=new { type="object",properties,required=required ?? [] } };
     public static readonly object[] All =
     [
         Tool("register_agent","Register or refresh an agent.",new { agent_id=new{type="string"},agent_type=new{type="string"},name=new{type="string"},session_id=new{type="string"},metadata_json=new{type="string"}},["agent_id","agent_type"]),
         Tool("list_agents","List registered agents.",new { }),
-        Tool("send_message","Persist and enqueue a message idempotently.",new { sender_agent_id=new{type="string"},recipient=new{type="string"},recipients=new{type="array",items=new{type="string"}},body=new{type="string"},thread_id=new{type="string"},reply_to_message_id=new{type="string"},message_type=new{type="string",@enum=new[]{"message","notification","system"}},payload_json=new{type="string"},idempotency_key=new{type="string"}},["sender_agent_id","body","thread_id"]),
+        Tool("send_message",SendMessageDescription,new { sender_agent_id=new{type="string"},recipient=new{type="string"},recipients=new{type="array",items=new{type="string"}},body=new{type="string"},thread_id=new{type="string"},reply_to_message_id=new{type="string"},message_type=new{type="string",@enum=new[]{"message","notification","system"}},payload_json=new{type="string"},idempotency_key=new{type="string"}},["sender_agent_id","body","thread_id"]),
         Tool("get_messages","Lease pending messages for an agent.",new { agent_id=new{type="string"},limit=new{type="integer",minimum=1,maximum=500},lease_seconds=new{type="integer",minimum=1},thread_id=new{type="string"}},["agent_id"]),
         Tool("ack_message","Acknowledge a leased message.",new { agent_id=new{type="string"},message_id=new{type="string"}},["agent_id","message_id"])
     ];

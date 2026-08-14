@@ -57,8 +57,9 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
 - 最新のWindows x64バイナリZIPを取得
 - `%LOCALAPPDATA%\Programs\Itoguruma`へ配置
 - `%LOCALAPPDATA%\Programs\Itoguruma\data\messages.db`を共有DBとして準備
-- `itoguruma`をユーザーPATHへ登録
+- `itoguruma`と`stop-codex`をユーザーPATHへ登録
 - インストール済みのCodexとClaude Codeへ`itoguruma` MCPを登録
+- 読み取り専用メッセージビューワーを配置
 
 完了後、新しいターミナルを開き、CodexとClaude Codeを再起動してください。既存のDBは上書き・削除しません。インストーラのオプションは[コマンド一覧](COMMANDS.md#インストーラオプション)を参照してください。
 
@@ -69,7 +70,9 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
 ```text
 bin/
 ├─ server/Itoguruma.Server.exe
-└─ itoguruma/itoguruma.exe
+├─ itoguruma/itoguruma.exe
+├─ viewer/itoguruma-viewer.exe
+└─ stop-codex/stop-codex.exe
 examples/claude-settings.json
 examples/codex-hooks.json
 README.md
@@ -96,7 +99,7 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 配布物をローカル生成する場合:
 
 ```powershell
-.\scripts\Build-Release.ps1 -Version 0.2.1
+.\scripts\Build-Release.ps1 -Version 0.3.1
 ```
 
 ## 初期設定と往復確認
@@ -113,6 +116,23 @@ itoguruma ack --agent codex-main --message <messageId>
 
 Hookを使う場合は、インストーラが生成する`examples/claude-settings.json`または`examples/codex-hooks.json`を既存設定へ統合します。設定場所、Hookごとの動作、ACK、疎通確認は[Hook設定ガイド](HOOKS.md)を参照してください。
 
+## メッセージビューワー
+
+`itoguruma-viewer.exe`は共有SQLiteを読み取り専用で監視するWindows GUIです。インストーラ版では次から起動できます。
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Itoguruma\bin\viewer\itoguruma-viewer.exe"
+```
+
+Codex本体と関連プロセスを強制終了する場合は`stop-codex`を使用します。実行前に対象だけを確認できます。
+
+```powershell
+stop-codex --list
+stop-codex
+```
+
+ビューワーでは、メッセージの送信元・宛先・thread・本文、`pending`／`leased`／`acked`の配送状態、lease期限、ACK時刻を確認できます。状態・Agent・キーワードで絞り込みでき、既定では2秒間隔で自動更新します。DBを更新せず、メッセージをleaseまたはACKしません。別のDBを開く場合は画面上部の「参照」または第1コマンドライン引数で指定します。
+
 ## 主な機能
 
 - append-onlyのメッセージ本文と、分離した`pending → leased → acked`配送状態
@@ -122,4 +142,4 @@ Hookを使う場合は、インストーラが生成する`examples/claude-setti
 - thread、reply-to、複数宛先
 - Claude Code／Codex Hookから利用できる`itoguruma` CLI
 
-MCP Tool → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。Idle状態のAgentを起こすSupervisor、Task/Project管理、Broadcast、検索、Web UI、HTTP HubはMVPの対象外です。
+MCP Tool → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。ビューワーもUI → `IMessageMonitor` → `SqliteMessageMonitor`としてSQLiteアクセスを分離しています。Idle状態のAgentを起こすSupervisor、Task/Project管理、Broadcast、全文検索、Web UI、HTTP Hubは対象外です。
