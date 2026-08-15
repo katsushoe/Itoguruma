@@ -5,7 +5,9 @@ namespace Itoguruma.Viewer;
 partial class MessageDetailsForm
 {
     private System.ComponentModel.IContainer? components = null;
-    private TextBox detailsTextBox = null!;
+    private DataGridView detailsGrid = null!;
+    private DataGridViewTextBoxColumn itemColumn = null!;
+    private DataGridViewTextBoxColumn valueColumn = null!;
     private Button closeButton = null!;
     private TableLayoutPanel rootLayout = null!;
     private FlowLayoutPanel buttonLayout = null!;
@@ -22,26 +24,51 @@ partial class MessageDetailsForm
 
     private void InitializeComponent()
     {
-        detailsTextBox = new TextBox();
+        detailsGrid = new DataGridView();
+        itemColumn = new DataGridViewTextBoxColumn();
+        valueColumn = new DataGridViewTextBoxColumn();
         closeButton = new Button();
         rootLayout = new TableLayoutPanel();
         buttonLayout = new FlowLayoutPanel();
+        ((System.ComponentModel.ISupportInitialize)detailsGrid).BeginInit();
         rootLayout.SuspendLayout();
         buttonLayout.SuspendLayout();
         SuspendLayout();
         //
-        // detailsTextBox
+        // detailsGrid
         //
-        detailsTextBox.Dock = DockStyle.Fill;
-        detailsTextBox.Font = new Font(FontFamily.GenericMonospace, 10F);
-        detailsTextBox.Location = new Point(12, 12);
-        detailsTextBox.Multiline = true;
-        detailsTextBox.Name = "detailsTextBox";
-        detailsTextBox.ReadOnly = true;
-        detailsTextBox.ScrollBars = ScrollBars.Both;
-        detailsTextBox.Size = new Size(760, 493);
-        detailsTextBox.TabIndex = 0;
-        detailsTextBox.WordWrap = false;
+        detailsGrid.AllowUserToAddRows = false;
+        detailsGrid.AllowUserToDeleteRows = false;
+        detailsGrid.AllowUserToResizeRows = false;
+        detailsGrid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+        detailsGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+        detailsGrid.Columns.AddRange(new DataGridViewColumn[] { itemColumn, valueColumn });
+        detailsGrid.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        detailsGrid.Dock = DockStyle.Fill;
+        detailsGrid.Location = new Point(12, 12);
+        detailsGrid.MultiSelect = false;
+        detailsGrid.Name = "detailsGrid";
+        detailsGrid.ReadOnly = true;
+        detailsGrid.RowHeadersVisible = false;
+        detailsGrid.SelectionMode = DataGridViewSelectionMode.CellSelect;
+        detailsGrid.Size = new Size(760, 493);
+        detailsGrid.TabIndex = 0;
+        //
+        // itemColumn
+        //
+        itemColumn.HeaderText = "項目";
+        itemColumn.Name = "itemColumn";
+        itemColumn.ReadOnly = true;
+        itemColumn.SortMode = DataGridViewColumnSortMode.NotSortable;
+        itemColumn.Width = 150;
+        //
+        // valueColumn
+        //
+        valueColumn.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        valueColumn.HeaderText = "値";
+        valueColumn.Name = "valueColumn";
+        valueColumn.ReadOnly = true;
+        valueColumn.SortMode = DataGridViewColumnSortMode.NotSortable;
         //
         // closeButton
         //
@@ -58,7 +85,7 @@ partial class MessageDetailsForm
         //
         rootLayout.ColumnCount = 1;
         rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        rootLayout.Controls.Add(detailsTextBox, 0, 0);
+        rootLayout.Controls.Add(detailsGrid, 0, 0);
         rootLayout.Controls.Add(buttonLayout, 0, 1);
         rootLayout.Dock = DockStyle.Fill;
         rootLayout.Location = new Point(0, 0);
@@ -98,6 +125,7 @@ partial class MessageDetailsForm
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
         Text = "メッセージ詳細";
+        ((System.ComponentModel.ISupportInitialize)detailsGrid).EndInit();
         rootLayout.ResumeLayout(false);
         rootLayout.PerformLayout();
         buttonLayout.ResumeLayout(false);
