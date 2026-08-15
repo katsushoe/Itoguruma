@@ -51,7 +51,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1 [-Version <vers
 | :--- | :--- |
 | `-Version` | `latest`または取得するReleaseバージョンを指定します。既定は`latest`です。 |
 | `-InstallDirectory` | インストール先を指定します。既定は`%LOCALAPPDATA%\Programs\Itoguruma`です。 |
-| `-NoPath` | `itoguruma`と`stop-codex`のユーザーPATH登録を省略します。 |
+| `-NoPath` | `itoguruma`、`stop-codex`、`stop-claude`のユーザーPATH登録を省略します。 |
 | `-SkipCodex` | CodexへのMCP登録を省略します。 |
 | `-SkipClaude` | Claude CodeへのユーザースコープMCP登録を省略します。 |
 
