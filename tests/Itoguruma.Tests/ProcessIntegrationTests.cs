@@ -34,7 +34,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(5, result.Output.Count);
         Assert.All(result.Output, response => Assert.False(response.RootElement.TryGetProperty("error", out _)));
-        Assert.Equal("0.3.1", result.Output[0].RootElement.GetProperty("result")
+        Assert.Equal("0.3.2", result.Output[0].RootElement.GetProperty("result")
             .GetProperty("serverInfo").GetProperty("version").GetString());
         var messages = StructuredData(result.Output[4]);
         var message = Assert.Single(messages.EnumerateArray());
@@ -99,6 +99,18 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpServer_WhenVersionIsRequested_ReturnsRunningProductVersion()
+    {
+        var result = await RunAsync("Itoguruma.Server",
+            [ToolRequest(1, "get_version", new { })], Path.Combine(_directory, "mcp-version.db"));
+
+        Assert.Equal(0, result.ExitCode);
+        var version = StructuredData(result.Output[0]);
+        Assert.Equal("itoguruma", version.GetProperty("name").GetString());
+        Assert.Equal("0.3.2", version.GetProperty("version").GetString());
+    }
+
+    [Fact]
     public async Task AgentHook_WhenPromptAndStopEventsOccur_UsesExpectedOutputAndExitCode()
     {
         var databasePath = Path.Combine(_directory, "hook.db");
@@ -150,12 +162,12 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task AgentCli_WhenVersionIsRequested_ReturnsProductVersion()
+    public async Task AgentCli_WhenVersionIsRequested_ReturnsRunningProductVersion()
     {
         var result = await RunAsync("itoguruma", ["version"], Path.Combine(_directory, "version.db"), string.Empty);
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal("itoguruma 0.3.1", result.StandardOutput.Trim());
+        Assert.Equal("itoguruma 0.3.2", result.StandardOutput.Trim());
         Assert.False(File.Exists(Path.Combine(_directory, "version.db")));
     }
 
