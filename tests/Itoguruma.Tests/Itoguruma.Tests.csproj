@@ -9,4 +9,8 @@
     <ProjectReference Include="../../src/Itoguruma.Server/Itoguruma.Server.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../src/Itoguruma.Cli/Itoguruma.Cli.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Itoguruma.StopClaude/ClaudeProcessMatcher.cs" Link="StopClaude/ClaudeProcessMatcher.cs" />
+    <Compile Include="../../src/Itoguruma.StopClaude/ProcessInfo.cs" Link="StopClaude/ProcessInfo.cs" />
+  </ItemGroup>
 </Project>
