@@ -14,7 +14,24 @@ public static class ServerSingleInstance
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
 
         var normalizedPath = Path.GetFullPath(databasePath).ToLowerInvariant();
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedPath));
-        return $"{Scope}itoguruma.database.{Convert.ToHexString(hash, 0, 16).ToLowerInvariant()}.single";
+        return CreateName("database", normalizedPath);
+    }
+
+    /// <summary>HTTPサーバーURLに対応するセッションローカル Mutex 名を返します。</summary>
+    public static string ForEndpoint(string serverUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serverUrl);
+
+        var uri = new Uri(serverUrl, UriKind.Absolute);
+        var normalizedUrl = uri.GetComponents(UriComponents.SchemeAndServer, UriFormat.SafeUnescaped)
+            .TrimEnd('/')
+            .ToLowerInvariant();
+        return CreateName("endpoint", normalizedUrl);
+    }
+
+    private static string CreateName(string resourceType, string resourceId)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(resourceId));
+        return $"{Scope}itoguruma.{resourceType}.{Convert.ToHexString(hash, 0, 16).ToLowerInvariant()}.single";
     }
 }

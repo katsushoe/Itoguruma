@@ -3,6 +3,7 @@ param(
     [string]$Version = "latest",
     [string]$PackagePath = "",
     [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA "Programs\Itoguruma"),
+    [string]$ServerUrl = "http://127.0.0.1:47631",
     [switch]$NoPath,
     [switch]$SkipCodex,
     [switch]$SkipClaude
@@ -114,6 +115,11 @@ try {
         }
     }
 
+    $installedServerPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
+    $installedServers = @(Get-Process -Name "Itoguruma.Server" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -eq $installedServerPath })
+    $installedServers | Stop-Process -Force
+    $installedServers | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $destinationRoot | Out-Null
     Copy-Item -Path (Join-Path $extractRoot "*") -Destination $destinationRoot -Recurse -Force
     $dataRoot = Join-Path $destinationRoot "data"
@@ -148,6 +154,21 @@ try {
 
     $serverPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
     $databasePath = Join-Path $dataRoot "messages.db"
+    $mcpUrl = $ServerUrl.TrimEnd("/") + "/mcp"
+    $authenticationToken = [Environment]::GetEnvironmentVariable("ITOGURUMA_AUTH_TOKEN", "User")
+    if ([string]::IsNullOrWhiteSpace($authenticationToken)) {
+        $tokenBytes = New-Object byte[] 32
+        $random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        try { $random.GetBytes($tokenBytes) }
+        finally { $random.Dispose() }
+        $authenticationToken = [Convert]::ToBase64String($tokenBytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+    }
+    [Environment]::SetEnvironmentVariable("ITOGURUMA_AUTH_TOKEN", $authenticationToken, "User")
+    [Environment]::SetEnvironmentVariable("ITOGURUMA_DB", $databasePath, "User")
+    [Environment]::SetEnvironmentVariable("ITOGURUMA_URL", $ServerUrl, "User")
+    $env:ITOGURUMA_AUTH_TOKEN = $authenticationToken
+    $env:ITOGURUMA_DB = $databasePath
+    $env:ITOGURUMA_URL = $ServerUrl
     $cliPath = Join-Path $cliDirectory "itoguruma.exe"
     function New-HookSettings {
         param([string]$AgentId)
@@ -180,19 +201,70 @@ try {
         $codex = Get-Command codex -ErrorAction SilentlyContinue
         if ($null -ne $codex) {
             & $codex.Source mcp remove itoguruma 2>$null | Out-Null
-            Invoke-ClientCommand $codex @("mcp", "add", "itoguruma", "--env", "ITOGURUMA_DB=$databasePath", "--", $serverPath)
+            Invoke-ClientCommand $codex @("mcp", "add", "itoguruma", "--url", $mcpUrl, "--bearer-token-env-var", "ITOGURUMA_AUTH_TOKEN")
         }
     }
     if (!$SkipClaude) {
         $claude = Get-Command claude -ErrorAction SilentlyContinue
         if ($null -ne $claude) {
-            & $claude.Source mcp remove --scope user itoguruma 2>$null | Out-Null
-            Invoke-ClientCommand $claude @("mcp", "add", "--scope", "user", "itoguruma", "--env", "ITOGURUMA_DB=$databasePath", "--", $serverPath)
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                & $claude.Source mcp remove --scope user itoguruma 2>$null | Out-Null
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            Invoke-ClientCommand $claude @(
+                "mcp", "add", "--transport", "http", "--scope", "user",
+                "itoguruma", $mcpUrl, "--header", "Authorization: Bearer $authenticationToken")
         }
     }
 
+    $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+    Remove-ItemProperty -Path $runKey -Name "ItogurumaServer" -ErrorAction SilentlyContinue
+    $taskName = "ItogurumaServer"
+    $taskUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $taskAction = New-ScheduledTaskAction -Execute $serverPath -WorkingDirectory (Split-Path $serverPath)
+    $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $taskUser
+    $taskPrincipal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType Interactive -RunLevel Limited
+    $taskSettings = New-ScheduledTaskSettingsSet `
+        -MultipleInstances IgnoreNew `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 1) `
+        -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -StartWhenAvailable
+    Register-ScheduledTask `
+        -TaskName $taskName `
+        -Action $taskAction `
+        -Trigger $taskTrigger `
+        -Principal $taskPrincipal `
+        -Settings $taskSettings `
+        -Description "Run the per-user Itoguruma MCP Streamable HTTP server." `
+        -Force | Out-Null
+    Start-ScheduledTask -TaskName $taskName
+    $healthUrl = $ServerUrl.TrimEnd("/") + "/health"
+    $serverReady = $false
+    for ($attempt = 1; $attempt -le 20; $attempt++) {
+        try {
+            $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
+            if ($health.status -eq "ok") {
+                $serverReady = $true
+                break
+            }
+        }
+        catch {
+            if ($attempt -eq 20) { throw }
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if (!$serverReady) { throw "Itoguruma.Server health check failed: $healthUrl" }
+    $task = Get-ScheduledTask -TaskName $taskName
+    if ($task.State -ne "Running") { throw "ItogurumaServer scheduled task is not running." }
+
     Write-Host "Itoguruma installed: $destinationRoot"
     Write-Host "Database: $databasePath"
+    Write-Host "MCP endpoint: $mcpUrl"
     Write-Host "Claude Code Hook example: $(Join-Path $examplesRoot 'claude-settings.json')"
     Write-Host "Codex Hook example: $(Join-Path $examplesRoot 'codex-hooks.json')"
     Write-Host "Message Viewer: $(Join-Path $destinationRoot 'bin\viewer\itoguruma-viewer.exe')"

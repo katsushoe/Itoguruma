@@ -39,4 +39,20 @@ public sealed class ServerSingleInstanceTests
         Assert.True(firstCreatedNew);
         Assert.False(secondCreatedNew);
     }
+
+    [Fact]
+    public void ForEndpoint_WhenUrlsResolveToSameListener_ReturnsSameName()
+    {
+        Assert.Equal(
+            ServerSingleInstance.ForEndpoint("http://127.0.0.1:47631"),
+            ServerSingleInstance.ForEndpoint("HTTP://127.0.0.1:47631/"));
+    }
+
+    [Fact]
+    public void ForEndpoint_WhenPortsDiffer_ReturnsDifferentNames()
+    {
+        Assert.NotEqual(
+            ServerSingleInstance.ForEndpoint("http://127.0.0.1:47631"),
+            ServerSingleInstance.ForEndpoint("http://127.0.0.1:47632"));
+    }
 }
