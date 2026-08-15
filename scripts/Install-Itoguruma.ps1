@@ -101,6 +101,7 @@ try {
         "bin\itoguruma\itoguruma.exe",
         "bin\viewer\itoguruma-viewer.exe",
         "bin\stop-codex\stop-codex.exe",
+        "bin\stop-claude\stop-claude.exe",
         "examples\claude-settings.json",
         "examples\codex-hooks.json",
         "README.md",
@@ -120,6 +121,7 @@ try {
 
     $cliDirectory = Join-Path $destinationRoot "bin\itoguruma"
     $stopCodexDirectory = Join-Path $destinationRoot "bin\stop-codex"
+    $stopClaudeDirectory = Join-Path $destinationRoot "bin\stop-claude"
     & (Join-Path $cliDirectory "itoguruma.exe") --help | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Installation verification failed."
@@ -128,11 +130,15 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "stop-codex installation verification failed."
     }
+    & (Join-Path $stopClaudeDirectory "stop-claude.exe") --list | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "stop-claude installation verification failed."
+    }
 
     if (!$NoPath) {
         $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
         $pathEntries = @($userPath -split ";" | Where-Object { ![string]::IsNullOrWhiteSpace($_) })
-        foreach ($pathDirectory in @($cliDirectory, $stopCodexDirectory)) {
+        foreach ($pathDirectory in @($cliDirectory, $stopCodexDirectory, $stopClaudeDirectory)) {
             if (!($pathEntries | Where-Object { $_.TrimEnd("\") -ieq $pathDirectory.TrimEnd("\") })) {
                 $pathEntries += $pathDirectory
             }
@@ -181,7 +187,7 @@ try {
         $claude = Get-Command claude -ErrorAction SilentlyContinue
         if ($null -ne $claude) {
             & $claude.Source mcp remove --scope user itoguruma 2>$null | Out-Null
-            Invoke-ClientCommand $claude @("mcp", "add", "--scope", "user", "--env", "ITOGURUMA_DB=$databasePath", "itoguruma", "--", $serverPath)
+            Invoke-ClientCommand $claude @("mcp", "add", "--scope", "user", "itoguruma", "--env", "ITOGURUMA_DB=$databasePath", "--", $serverPath)
         }
     }
 
@@ -191,8 +197,9 @@ try {
     Write-Host "Codex Hook example: $(Join-Path $examplesRoot 'codex-hooks.json')"
     Write-Host "Message Viewer: $(Join-Path $destinationRoot 'bin\viewer\itoguruma-viewer.exe')"
     Write-Host "Codex process stopper: $(Join-Path $stopCodexDirectory 'stop-codex.exe')"
+    Write-Host "Claude process stopper: $(Join-Path $stopClaudeDirectory 'stop-claude.exe')"
     if (!$NoPath) {
-        Write-Host "Open a new terminal to use itoguruma and stop-codex from PATH."
+        Write-Host "Open a new terminal to use itoguruma, stop-codex, and stop-claude from PATH."
     }
     Write-Host "Restart Codex and Claude Code before using the MCP server."
 }

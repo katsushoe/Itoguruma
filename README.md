@@ -57,7 +57,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
 - 最新のWindows x64バイナリZIPを取得
 - `%LOCALAPPDATA%\Programs\Itoguruma`へ配置
 - `%LOCALAPPDATA%\Programs\Itoguruma\data\messages.db`を共有DBとして準備
-- `itoguruma`と`stop-codex`をユーザーPATHへ登録
+- `itoguruma`、`stop-codex`、`stop-claude`をユーザーPATHへ登録
 - インストール済みのCodexとClaude Codeへ`itoguruma` MCPを登録
 - 読み取り専用メッセージビューワーを配置
 
@@ -72,7 +72,8 @@ bin/
 ├─ server/Itoguruma.Server.exe
 ├─ itoguruma/itoguruma.exe
 ├─ viewer/itoguruma-viewer.exe
-└─ stop-codex/stop-codex.exe
+├─ stop-codex/stop-codex.exe
+└─ stop-claude/stop-claude.exe
 examples/claude-settings.json
 examples/codex-hooks.json
 README.md
@@ -129,6 +130,13 @@ Codex本体と関連プロセスを強制終了する場合は`stop-codex`を使
 ```powershell
 stop-codex --list
 stop-codex
+```
+
+Claude CodeとClaudeデスクトップ本体を強制終了する場合は`stop-claude`を使用します。
+
+```powershell
+stop-claude --list
+stop-claude
 ```
 
 ビューワーでは、メッセージの送信元・宛先・thread・本文、`pending`／`leased`／`acked`の配送状態、lease期限、ACK時刻を確認できます。状態・Agent・キーワードで絞り込みでき、既定では2秒間隔で自動更新します。DBを更新せず、メッセージをleaseまたはACKしません。別のDBを開く場合は画面上部の「参照」または第1コマンドライン引数で指定します。
