@@ -4,7 +4,25 @@ using Itoguruma.Core;
 using Itoguruma.Server;
 using ModelContextProtocol.Server;
 
-var builder = WebApplication.CreateBuilder(args);
+var configDirectory = Environment.GetEnvironmentVariable("ITOGURUMA_CONFIG_DIR")
+    ?? AppContext.BaseDirectory;
+var logDirectory = Environment.GetEnvironmentVariable("ITOGURUMA_LOG_DIR")
+    ?? Path.Combine(AppContext.BaseDirectory, "logs");
+Directory.CreateDirectory(logDirectory);
+var logPath = Path.Combine(logDirectory, $"itoguruma-server-{DateTimeOffset.Now:yyyyMMdd}.log");
+using var logStream = new FileStream(logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+using var logWriter = new StreamWriter(logStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
+{
+    AutoFlush = true
+};
+var synchronizedLogWriter = TextWriter.Synchronized(logWriter);
+Console.SetOut(synchronizedLogWriter);
+Console.SetError(synchronizedLogWriter);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = configDirectory
+});
 var serverUrl = Environment.GetEnvironmentVariable("ITOGURUMA_URL")
     ?? builder.Configuration["Itoguruma:ServerUrl"]
     ?? throw new InvalidOperationException("Itoguruma:ServerUrl is required.");
@@ -50,6 +68,7 @@ builder.Services
     .WithTools<ItogurumaTools>();
 
 var app = builder.Build();
+app.Logger.LogInformation("[Startup] Itoguruma server starting at {ServerUrl}", serverUrl);
 app.Use(async (context, next) =>
 {
     if (!context.Request.Path.StartsWithSegments("/mcp"))

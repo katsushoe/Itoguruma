@@ -87,6 +87,8 @@ COMMANDS.md
 $env:ITOGURUMA_AUTH_TOKEN = "<十分に長いランダム値>"
 $env:ITOGURUMA_DB = "<install>\data\messages.db"
 $env:ITOGURUMA_URL = "http://127.0.0.1:47631"
+$env:ITOGURUMA_CONFIG_DIR = "<install>\config"
+$env:ITOGURUMA_LOG_DIR = "<install>\logs"
 Start-Process "<install>\bin\server\Itoguruma.Server.exe" -WindowStyle Hidden
 codex mcp add itoguruma --url "http://127.0.0.1:47631/mcp" --bearer-token-env-var ITOGURUMA_AUTH_TOKEN
 claude mcp add --transport http --scope user --header "Authorization: Bearer $env:ITOGURUMA_AUTH_TOKEN" itoguruma "http://127.0.0.1:47631/mcp"
