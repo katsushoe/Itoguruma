@@ -33,6 +33,7 @@ itoguruma ack --agent codex-main --message <messageId>
 
 | Tool | 必須入力 | 主な任意入力 | 内容 |
 | :--- | :--- | :--- | :--- |
+| `get_version` | なし | なし | 実行中のItoguruma MCP Serverバージョンを返します。 |
 | `register_agent` | `agent_id`, `agent_type` | `name`, `session_id`, `metadata_json` | Agentを登録またはheartbeat更新します。 |
 | `list_agents` | なし | なし | 登録済みAgentを一覧表示します。 |
 | `send_message` | `sender_agent_id`, `body`, `thread_id`と宛先 | `reply_to_message_id`, `message_type`, `payload_json`, `idempotency_key` | 1件以上の宛先へ送信します。 |
