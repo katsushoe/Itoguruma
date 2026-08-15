@@ -59,6 +59,7 @@ public sealed class MainForm : Form
         Shown += async (_, _) => await RefreshAsync();
         FormClosed += (_, _) => _timer.Stop();
         _messages.SelectionChanged += (_, _) => ShowSelectedMessage();
+        _messages.CellDoubleClick += ShowMessageDetails;
         _interval.ValueChanged += (_, _) => _timer.Interval = decimal.ToInt32(_interval.Value) * 1000;
         _autoRefresh.CheckedChanged += (_, _) => _timer.Enabled = _autoRefresh.Checked;
     }
@@ -209,6 +210,14 @@ public sealed class MainForm : Form
             Payload JSON:
             {message.PayloadJson}
             """;
+    }
+
+    private void ShowMessageDetails(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0 || _messages.Rows[e.RowIndex].DataBoundItem is not MessageRow row) return;
+
+        using var dialog = new MessageDetailsForm(row.Source);
+        dialog.ShowDialog(this);
     }
 
     private static Label LabelFor(string text) => new() { Text = text, AutoSize = true, Padding = new(6, 7, 2, 0) };
