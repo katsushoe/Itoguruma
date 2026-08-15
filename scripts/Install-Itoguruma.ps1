@@ -3,6 +3,8 @@ param(
     [string]$Version = "latest",
     [string]$PackagePath = "",
     [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA "Programs\Itoguruma"),
+    [string]$ConfigDirectory = "",
+    [string]$LogDirectory = "",
     [string]$ServerUrl = "http://127.0.0.1:47631",
     [switch]$NoPath,
     [switch]$SkipCodex,
@@ -12,6 +14,16 @@ param(
 $ErrorActionPreference = "Stop"
 $repository = "katsushoe/Itoguruma"
 $destinationRoot = [System.IO.Path]::GetFullPath($InstallDirectory)
+$configRoot = if ([string]::IsNullOrWhiteSpace($ConfigDirectory)) {
+    Join-Path $destinationRoot "config"
+} else {
+    [System.IO.Path]::GetFullPath($ConfigDirectory)
+}
+$logRoot = if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
+    Join-Path $destinationRoot "logs"
+} else {
+    [System.IO.Path]::GetFullPath($LogDirectory)
+}
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("itoguruma-install-" + [guid]::NewGuid().ToString("N"))
 
 function Invoke-ClientCommand {
@@ -115,13 +127,45 @@ try {
         }
     }
 
-    $installedServerPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
+    $taskName = "ItogurumaServer"
+    $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    $serverPaths = @((Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"))
+    if ($null -ne $existingTask) {
+        $serverPaths += @($existingTask.Actions.Execute | Where-Object { ![string]::IsNullOrWhiteSpace($_) })
+        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    }
     $installedServers = @(Get-Process -Name "Itoguruma.Server" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -eq $installedServerPath })
+        Where-Object { $serverPaths -contains $_.Path })
     $installedServers | Stop-Process -Force
     $installedServers | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+    $installedServerPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
+    if (Test-Path -LiteralPath $installedServerPath) {
+        $serverUnlocked = $false
+        for ($attempt = 1; $attempt -le 40; $attempt++) {
+            try {
+                $serverStream = [System.IO.File]::Open(
+                    $installedServerPath,
+                    [System.IO.FileMode]::Open,
+                    [System.IO.FileAccess]::ReadWrite,
+                    [System.IO.FileShare]::None)
+                $serverStream.Dispose()
+                $serverUnlocked = $true
+                break
+            }
+            catch [System.IO.IOException] {
+                Start-Sleep -Milliseconds 250
+            }
+        }
+        if (!$serverUnlocked) {
+            throw "The existing Itoguruma.Server process did not release its executable."
+        }
+    }
     New-Item -ItemType Directory -Force -Path $destinationRoot | Out-Null
     Copy-Item -Path (Join-Path $extractRoot "*") -Destination $destinationRoot -Recurse -Force
+    New-Item -ItemType Directory -Force -Path $configRoot, $logRoot | Out-Null
+    Copy-Item -LiteralPath (Join-Path $destinationRoot "bin\server\appsettings.json") `
+        -Destination (Join-Path $configRoot "appsettings.json") -Force
+    Remove-Item -LiteralPath (Join-Path $destinationRoot "bin\server\appsettings.json") -Force
     $dataRoot = Join-Path $destinationRoot "data"
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 
@@ -166,9 +210,13 @@ try {
     [Environment]::SetEnvironmentVariable("ITOGURUMA_AUTH_TOKEN", $authenticationToken, "User")
     [Environment]::SetEnvironmentVariable("ITOGURUMA_DB", $databasePath, "User")
     [Environment]::SetEnvironmentVariable("ITOGURUMA_URL", $ServerUrl, "User")
+    [Environment]::SetEnvironmentVariable("ITOGURUMA_CONFIG_DIR", $configRoot, "User")
+    [Environment]::SetEnvironmentVariable("ITOGURUMA_LOG_DIR", $logRoot, "User")
     $env:ITOGURUMA_AUTH_TOKEN = $authenticationToken
     $env:ITOGURUMA_DB = $databasePath
     $env:ITOGURUMA_URL = $ServerUrl
+    $env:ITOGURUMA_CONFIG_DIR = $configRoot
+    $env:ITOGURUMA_LOG_DIR = $logRoot
     $cliPath = Join-Path $cliDirectory "itoguruma.exe"
     function New-HookSettings {
         param([string]$AgentId)
@@ -223,7 +271,6 @@ try {
 
     $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
     Remove-ItemProperty -Path $runKey -Name "ItogurumaServer" -ErrorAction SilentlyContinue
-    $taskName = "ItogurumaServer"
     $taskUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
     $taskAction = New-ScheduledTaskAction -Execute $serverPath -WorkingDirectory (Split-Path $serverPath)
     $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $taskUser
@@ -263,6 +310,8 @@ try {
     if ($task.State -ne "Running") { throw "ItogurumaServer scheduled task is not running." }
 
     Write-Host "Itoguruma installed: $destinationRoot"
+    Write-Host "Configuration: $configRoot"
+    Write-Host "Logs: $logRoot"
     Write-Host "Database: $databasePath"
     Write-Host "MCP endpoint: $mcpUrl"
     Write-Host "Claude Code Hook example: $(Join-Path $examplesRoot 'claude-settings.json')"

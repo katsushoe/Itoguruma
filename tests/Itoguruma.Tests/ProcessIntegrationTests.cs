@@ -133,6 +133,19 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpServer_WhenStarted_WritesLogToConfiguredDirectory()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-log.db");
+        await using var server = await StartMcpServerAsync(databasePath);
+
+        var logFiles = Directory.GetFiles(
+            Path.Combine(_directory, "logs"), "itoguruma-server-*.log", SearchOption.TopDirectoryOnly);
+
+        Assert.Single(logFiles);
+        Assert.NotEqual(0, new FileInfo(logFiles[0]).Length);
+    }
+
+    [Fact]
     public async Task McpServer_WhenOriginIsNotLoopback_ReturnsForbidden()
     {
         await using var server = await StartMcpServerAsync(Path.Combine(_directory, "mcp-origin.db"));
@@ -307,6 +320,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         startInfo.Environment["ITOGURUMA_DB"] = databasePath;
         startInfo.Environment["ITOGURUMA_URL"] = serverUrl;
         startInfo.Environment["ITOGURUMA_AUTH_TOKEN"] = authenticationToken;
+        startInfo.Environment["ITOGURUMA_LOG_DIR"] = Path.Combine(
+            Path.GetDirectoryName(databasePath)!, "logs");
         return startInfo;
     }
 
