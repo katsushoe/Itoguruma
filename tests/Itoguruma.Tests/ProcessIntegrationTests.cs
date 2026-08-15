@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using Itoguruma.Core;
 using Xunit;
@@ -169,6 +169,49 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         Assert.Equal("itoguruma 0.3.2", result.StandardOutput.Trim());
         Assert.False(File.Exists(Path.Combine(_directory, "version.db")));
+    }
+
+    [Fact]
+    public async Task McpServer_WhenDatabaseIsAlreadyInUse_SecondProcessExits()
+    {
+        var databasePath = Path.Combine(_directory, "single-instance.db");
+        Directory.CreateDirectory(_directory);
+        var startInfo = new ProcessStartInfo("dotnet")
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add(FindApplicationAssembly("Itoguruma.Server"));
+        startInfo.Environment["ITOGURUMA_DB"] = databasePath;
+
+        using var first = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
+        try
+        {
+            var mutexName = ServerSingleInstance.ForDatabase(databasePath);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (true)
+            {
+                if (Mutex.TryOpenExisting(mutexName, out var observedMutex))
+                {
+                    observedMutex.Dispose();
+                    break;
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
+            }
+
+            var second = await RunAsync("Itoguruma.Server", [], databasePath, string.Empty);
+
+            Assert.Equal(1, second.ExitCode);
+            Assert.Contains("already running", second.StandardError, StringComparison.Ordinal);
+        }
+        finally
+        {
+            first.StandardInput.Close();
+            using var shutdownTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await first.WaitForExitAsync(shutdownTimeout.Token);
+        }
     }
 
     public void Dispose()

@@ -1,13 +1,24 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Itoguruma.Core;
 using Microsoft.Data.Sqlite;
 
 var databasePath = Environment.GetEnvironmentVariable("ITOGURUMA_DB")
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
+using var singleInstance = new Mutex(
+    initiallyOwned: true,
+    ServerSingleInstance.ForDatabase(databasePath),
+    out var createdNew);
+if (!createdNew)
+{
+    await Console.Error.WriteLineAsync("Itoguruma.Server is already running for the configured database.");
+    return 1;
+}
+
 var service = new MessagingService(new SqliteMessageStore(databasePath));
 await service.InitializeAsync();
 var server = new McpServer(service, Console.In, Console.Out);
 await server.RunAsync();
+return 0;
 
 internal sealed class McpServer(MessagingService service, TextReader input, TextWriter output)
 {

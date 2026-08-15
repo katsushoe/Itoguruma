@@ -87,6 +87,9 @@ codex mcp add itoguruma --env "ITOGURUMA_DB=<install>\data\messages.db" -- "<ins
 claude mcp add --scope user --env "ITOGURUMA_DB=<install>\data\messages.db" itoguruma -- "<install>\bin\server\Itoguruma.Server.exe"
 ```
 
+`Itoguruma.Server` は同じWindowsセッション内で、同一データベースを使用する多重起動を拒否します。
+2つ目のプロセスは標準エラーへ理由を出力し、終了コード `1` で終了します。別データベースを指定したプロセスは同時に起動できます。
+
 ## ソース版
 
 ソースからビルドする開発者だけが.NET 8 SDKを必要とします。
