@@ -20,6 +20,7 @@ public sealed class ItogurumaTools(MessagingService service)
         | Category | Meaning | Recommended response |
         |---|---|---|
         | `sqlite/table/write/reference_key` | A sender, recipient, or reply target does not exist. | Register missing agents or correct the reply target, then retry with the same `idempotency_key`. |
+        | `validation/argument` | A parameter value is missing or invalid (e.g. no recipient, unsupported `message_type`, malformed `payload_json`). | Fix the parameter named in the error and retry. |
         | `internal` | The operation failed for an unclassified internal reason. | Inspect the error content before retrying. |
         """;
 
@@ -70,6 +71,15 @@ public sealed class ItogurumaTools(MessagingService service)
                 "sqlite/table/write/reference_key",
                 "Itoguruma rejected the message because a referenced sender, recipient, or reply target does not exist.",
                 "Register every sender and recipient agent, verify reply_to_message_id when supplied, then retry with the same idempotency_key.",
+                true), isError: true);
+        }
+        catch (ArgumentException exception)
+        {
+            return CreateResult(new ToolError(
+                "invalid_argument",
+                "validation/argument",
+                exception.Message,
+                "Fix the invalid parameter and retry.",
                 true), isError: true);
         }
     }
