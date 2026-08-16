@@ -64,6 +64,15 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
 
 完了後、新しいターミナルを開き、CodexとClaude Codeを再起動してください。既存のDBは上書き・削除しません。インストーラのオプションは[コマンド一覧](COMMANDS.md#インストーラオプション)を参照してください。
 
+認証トークンの紛失・侵害が疑われる場合は、値を表示せず状態を確認し、専用コマンドでローテーションできます。
+
+```powershell
+itoguruma auth status
+itoguruma auth rotate
+```
+
+ローテーション直後から旧トークンは利用できません。表示される案内に従い、Serverを再起動し、Codex／Claude Code／Hataoriを再設定または再起動してください。詳細は[認証コマンド](COMMANDS.md#cliコマンド)を参照してください。
+
 ## バイナリZIP版
 
 `Itoguruma-x.x.x-win-x64.zip`を任意のディレクトリへ展開します。ZIPは.NETランタイムを同梱するため、.NET 8 SDKは不要です。

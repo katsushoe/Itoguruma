@@ -12,6 +12,8 @@
 | `itoguruma inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | 未処理メッセージをleaseして取得します。 |
 | `itoguruma ack` | `--agent`, `--message` | `--db` | lease済みメッセージをACKします。 |
 | `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Claude Code／Codex Hook入力を読み、InboxをHook出力へ追加します。 |
+| `itoguruma auth status` | なし | なし | 値を表示せず、ユーザー認証トークンの設定有無を表示します。 |
+| `itoguruma auth rotate` | なし | なし | 明示確認後に32バイトの暗号学的乱数でユーザー認証トークンをローテーションします。 |
 | `itoguruma version` | なし | なし | 製品バージョンを表示します。 |
 | `itoguruma --help` | なし | なし | CLI概要を表示します。 |
 
@@ -25,9 +27,13 @@ itoguruma agents
 itoguruma send --from claude-main --to codex-main --thread setup --body "確認してください" --idempotency-key setup-1
 itoguruma inbox --agent codex-main --lease-seconds 300
 itoguruma ack --agent codex-main --message <messageId>
+itoguruma auth status
+itoguruma auth rotate
 ```
 
 `send`を再試行するときは、同じ論理送信に同じ`--idempotency-key`を渡してください。`inbox`で取得した処理済みメッセージは、必ず`ack`してください。
+
+`auth rotate`は影響範囲を表示し、`ROTATE`の入力後に実行します。トークン値は標準出力やエラー出力へ表示しません。実行後は`ItogurumaServer`スケジュールタスクを再起動し、新しいターミナルを開いてCodexとClaude Codeを再起動してください。Claude CodeやHataoriなどBearerトークンを設定へ直接保持するクライアントは、新しいユーザー環境変数を参照するよう再設定が必要です。
 
 ## MCP Tool
 
