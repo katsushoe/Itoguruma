@@ -1,12 +1,3 @@
 {
-  "mcpServers": {
-    "itoguruma": {
-      "type": "stdio",
-      "command": "./artifacts/server/Itoguruma.Server.exe",
-      "args": [],
-      "env": {
-        "ITOGURUMA_DB": "./data/messages.db"
-      }
-    }
-  }
+  "mcpServers": {}
 }

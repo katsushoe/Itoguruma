@@ -1,6 +1,6 @@
 # Itoguruma
 
-Claude Code、Codexなどの独立したAIエージェント間で、SQLiteを正本としてメッセージを交換するMCP stdioサーバーです。
+Claude Code、Codexなどの独立したAIエージェント間で、SQLiteを正本としてメッセージを交換する常駐型MCP Streamable HTTPサーバーです。
 
 ## ユースケース
 
@@ -59,6 +59,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
 - `%LOCALAPPDATA%\Programs\Itoguruma\data\messages.db`を共有DBとして準備
 - `itoguruma`、`stop-codex`、`stop-claude`をユーザーPATHへ登録
 - インストール済みのCodexとClaude Codeへ`itoguruma` MCPを登録
+- localhost限定HTTPサーバーを起動し、ユーザー単位のスケジュールタスクへ登録
 - 読み取り専用メッセージビューワーを配置
 
 完了後、新しいターミナルを開き、CodexとClaude Codeを再起動してください。既存のDBは上書き・削除しません。インストーラのオプションは[コマンド一覧](COMMANDS.md#インストーラオプション)を参照してください。
@@ -80,12 +81,20 @@ README.md
 COMMANDS.md
 ```
 
-手動登録では、`<install>`を展開先の絶対パスに置き換えます。
+手動登録では、認証トークン、DB、待受URLをユーザー環境変数へ設定してサーバーを起動します。
 
 ```powershell
-codex mcp add itoguruma --env "ITOGURUMA_DB=<install>\data\messages.db" -- "<install>\bin\server\Itoguruma.Server.exe"
-claude mcp add --scope user --env "ITOGURUMA_DB=<install>\data\messages.db" itoguruma -- "<install>\bin\server\Itoguruma.Server.exe"
+$env:ITOGURUMA_AUTH_TOKEN = "<十分に長いランダム値>"
+$env:ITOGURUMA_DB = "<install>\data\messages.db"
+$env:ITOGURUMA_URL = "http://127.0.0.1:47631"
+$env:ITOGURUMA_CONFIG_DIR = "<install>\config"
+$env:ITOGURUMA_LOG_DIR = "<install>\logs"
+Start-Process "<install>\bin\server\Itoguruma.Server.exe" -WindowStyle Hidden
+codex mcp add itoguruma --url "http://127.0.0.1:47631/mcp" --bearer-token-env-var ITOGURUMA_AUTH_TOKEN
+claude mcp add --transport http --scope user --header "Authorization: Bearer $env:ITOGURUMA_AUTH_TOKEN" itoguruma "http://127.0.0.1:47631/mcp"
 ```
+
+`Itoguruma.Server`はURL単位およびDB単位の名前付きMutexで多重起動を拒否します。スケジュールタスクはログオン時に起動し、異常終了時は最大3回再起動します。MCPエンドポイントはBearer認証を必須とし、Originがある場合はloopbackだけを許可します。
 
 ## ソース版
 
@@ -150,4 +159,4 @@ stop-claude
 - thread、reply-to、複数宛先
 - Claude Code／Codex Hookから利用できる`itoguruma` CLI
 
-MCP Tool → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。ビューワーもUI → `IMessageMonitor` → `SqliteMessageMonitor`としてSQLiteアクセスを分離しています。Idle状態のAgentを起こすSupervisor、Task/Project管理、Broadcast、全文検索、Web UI、HTTP Hubは対象外です。
+MCP Streamable HTTP → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。ビューワーもUI → `IMessageMonitor` → `SqliteMessageMonitor`としてSQLiteアクセスを分離しています。Idle状態のAgentを起こすSupervisor、Task/Project管理、Broadcast、全文検索、Web UIは対象外です。

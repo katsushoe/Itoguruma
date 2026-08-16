@@ -52,8 +52,11 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1 [-Version <vers
 | :--- | :--- |
 | `-Version` | `latest`または取得するReleaseバージョンを指定します。既定は`latest`です。 |
 | `-InstallDirectory` | インストール先を指定します。既定は`%LOCALAPPDATA%\Programs\Itoguruma`です。 |
+| `-ServerUrl` | 常駐MCPサーバーの待受URLを指定します。既定は`http://127.0.0.1:47631`です。 |
 | `-NoPath` | `itoguruma`、`stop-codex`、`stop-claude`のユーザーPATH登録を省略します。 |
 | `-SkipCodex` | CodexへのMCP登録を省略します。 |
 | `-SkipClaude` | Claude CodeへのユーザースコープMCP登録を省略します。 |
+
+サーバーは`ITOGURUMA_URL`、`ITOGURUMA_DB`、`ITOGURUMA_AUTH_TOKEN`を使用します。認証トークンは必須です。
 
 `-PackagePath`はローカルのバイナリZIPを指定する検証・オフライン導入用オプションです。
