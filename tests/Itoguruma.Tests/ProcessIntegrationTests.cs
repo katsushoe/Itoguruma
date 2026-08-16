@@ -1,5 +1,8 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Sockets;
 using Itoguruma.Core;
 using Xunit;
 
@@ -16,7 +19,12 @@ public sealed class ProcessIntegrationTests : IDisposable
         var databasePath = Path.Combine(_directory, "mcp.db");
         var requests = new[]
         {
-            Request(1, "initialize", new { }),
+            Request(1, "initialize", new
+            {
+                protocolVersion = "2025-11-25",
+                capabilities = new { },
+                clientInfo = new { name = "itoguruma-tests", version = "1.0" }
+            }),
             ToolRequest(2, "register_agent", new { agent_id = "sender", agent_type = "test" }),
             ToolRequest(3, "register_agent", new { agent_id = "recipient", agent_type = "test" }),
             ToolRequest(4, "send_message", new
@@ -29,7 +37,7 @@ public sealed class ProcessIntegrationTests : IDisposable
             ToolRequest(5, "get_messages", new { agent_id = "recipient" })
         };
 
-        var result = await RunAsync("Itoguruma.Server", requests, databasePath);
+        var result = await RunMcpAsync(requests, databasePath);
 
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(5, result.Output.Count);
@@ -41,7 +49,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal("integration message", message.GetProperty("body").GetString());
         var messageId = message.GetProperty("messageId").GetString();
 
-        var acknowledgement = await RunAsync("Itoguruma.Server",
+        var acknowledgement = await RunMcpAsync(
         [
             ToolRequest(6, "ack_message", new { agent_id = "recipient", message_id = messageId }),
             ToolRequest(7, "get_messages", new { agent_id = "recipient" })
@@ -68,13 +76,15 @@ public sealed class ProcessIntegrationTests : IDisposable
             })
         };
 
-        var result = await RunAsync("Itoguruma.Server", requests, databasePath);
+        var result = await RunMcpAsync(requests, databasePath);
 
         Assert.Equal(0, result.ExitCode);
-        var error = result.Output[1].RootElement.GetProperty("error");
-        Assert.Equal(-32603, error.GetProperty("code").GetInt32());
-        Assert.Contains("not registered", error.GetProperty("message").GetString(), StringComparison.Ordinal);
-        var data = error.GetProperty("data");
+        var toolResult = result.Output[1].RootElement.GetProperty("result");
+        Assert.True(toolResult.TryGetProperty("isError", out var isError), toolResult.GetRawText());
+        Assert.True(isError.GetBoolean());
+        using var errorDocument = JsonDocument.Parse(
+            toolResult.GetProperty("content")[0].GetProperty("text").GetString()!);
+        var data = errorDocument.RootElement;
         Assert.Equal("reference_not_found", data.GetProperty("errorCode").GetString());
         Assert.Equal("sqlite/table/write/reference_key", data.GetProperty("category").GetString());
         Assert.Contains("Register every sender and recipient agent",
@@ -85,7 +95,7 @@ public sealed class ProcessIntegrationTests : IDisposable
     [Fact]
     public async Task McpServer_WhenToolsAreListed_DescribesErrorCategoryCatalog()
     {
-        var result = await RunAsync("Itoguruma.Server",
+        var result = await RunMcpAsync(
             [Request(1, "tools/list", new { })], Path.Combine(_directory, "mcp-tools.db"));
 
         Assert.Equal(0, result.ExitCode);
@@ -101,13 +111,52 @@ public sealed class ProcessIntegrationTests : IDisposable
     [Fact]
     public async Task McpServer_WhenVersionIsRequested_ReturnsRunningProductVersion()
     {
-        var result = await RunAsync("Itoguruma.Server",
+        var result = await RunMcpAsync(
             [ToolRequest(1, "get_version", new { })], Path.Combine(_directory, "mcp-version.db"));
 
         Assert.Equal(0, result.ExitCode);
         var version = StructuredData(result.Output[0]);
         Assert.Equal("itoguruma", version.GetProperty("name").GetString());
         Assert.Equal("0.3.2", version.GetProperty("version").GetString());
+    }
+
+    [Fact]
+    public async Task McpServer_WhenAuthenticationIsMissing_ReturnsUnauthorized()
+    {
+        await using var server = await StartMcpServerAsync(Path.Combine(_directory, "mcp-auth.db"));
+        using var client = new HttpClient { BaseAddress = new Uri(server.ServerUrl) };
+        using var content = new StringContent(ToolRequest(1, "get_version", new { }));
+
+        using var response = await client.PostAsync("/mcp", content);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task McpServer_WhenStarted_WritesLogToConfiguredDirectory()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-log.db");
+        await using var server = await StartMcpServerAsync(databasePath);
+
+        var logFiles = Directory.GetFiles(
+            Path.Combine(_directory, "logs"), "itoguruma-server-*.log", SearchOption.TopDirectoryOnly);
+
+        Assert.Single(logFiles);
+        Assert.NotEqual(0, new FileInfo(logFiles[0]).Length);
+    }
+
+    [Fact]
+    public async Task McpServer_WhenOriginIsNotLoopback_ReturnsForbidden()
+    {
+        await using var server = await StartMcpServerAsync(Path.Combine(_directory, "mcp-origin.db"));
+        using var client = new HttpClient { BaseAddress = new Uri(server.ServerUrl) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", server.AuthenticationToken);
+        client.DefaultRequestHeaders.Add("Origin", "https://example.com");
+        using var content = new StringContent(ToolRequest(1, "get_version", new { }));
+
+        using var response = await client.PostAsync("/mcp", content);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -171,6 +220,20 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_directory, "version.db")));
     }
 
+    [Fact]
+    public async Task McpServer_WhenDatabaseIsAlreadyInUse_SecondProcessExits()
+    {
+        var databasePath = Path.Combine(_directory, "single-instance.db");
+        await using var first = await StartMcpServerAsync(databasePath);
+        var secondStartInfo = CreateMcpServerStartInfo(databasePath, first.ServerUrl, first.AuthenticationToken);
+        using var second = Process.Start(secondStartInfo) ?? throw new InvalidOperationException("Process did not start.");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await second.WaitForExitAsync(timeout.Token);
+
+        Assert.Equal(1, second.ExitCode);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, true);
@@ -187,16 +250,97 @@ public sealed class ProcessIntegrationTests : IDisposable
         return response.RootElement.GetProperty("result").GetProperty("structuredContent").GetProperty("data");
     }
 
-    private static async Task<ProcessResult> RunAsync(
-        string application,
-        IReadOnlyList<string> inputLines,
-        string databasePath)
+    private async Task<ProcessResult> RunMcpAsync(IReadOnlyList<string> requests, string databasePath)
     {
-        var result = await RunAsync(application, [], databasePath, string.Join(Environment.NewLine, inputLines));
-        var output = result.StandardOutput.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => JsonDocument.Parse(line))
-            .ToArray();
-        return result with { Output = output };
+        await using var server = await StartMcpServerAsync(databasePath);
+        using var client = new HttpClient { BaseAddress = new Uri(server.ServerUrl) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", server.AuthenticationToken);
+        var output = new List<JsonDocument>();
+        foreach (var request in requests)
+        {
+            using var message = new HttpRequestMessage(HttpMethod.Post, "/mcp");
+            message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+            message.Headers.TryAddWithoutValidation("MCP-Protocol-Version", "2025-11-25");
+            message.Content = new StringContent(request, System.Text.Encoding.UTF8, "application/json");
+            using var response = await client.SendAsync(message);
+            response.EnsureSuccessStatusCode();
+            output.Add(ParseMcpResponse(await response.Content.ReadAsStringAsync()));
+        }
+
+        return new(0, string.Empty, string.Empty, output);
+    }
+
+    private async Task<RunningMcpServer> StartMcpServerAsync(string databasePath)
+    {
+        Directory.CreateDirectory(_directory);
+        var serverUrl = $"http://127.0.0.1:{GetAvailablePort()}";
+        var authenticationToken = Guid.NewGuid().ToString("N");
+        var startInfo = CreateMcpServerStartInfo(databasePath, serverUrl, authenticationToken);
+        var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        var server = new RunningMcpServer(process, standardOutput, standardError, serverUrl, authenticationToken);
+        try
+        {
+            using var client = new HttpClient { BaseAddress = new Uri(serverUrl) };
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (true)
+            {
+                try
+                {
+                    using var response = await client.GetAsync("/health", timeout.Token);
+                    if (response.StatusCode == HttpStatusCode.OK) return server;
+                }
+                catch (HttpRequestException)
+                {
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(25), timeout.Token);
+            }
+        }
+        catch
+        {
+            await server.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static ProcessStartInfo CreateMcpServerStartInfo(
+        string databasePath,
+        string serverUrl,
+        string authenticationToken)
+    {
+        var startInfo = new ProcessStartInfo("dotnet")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add(FindApplicationAssembly("Itoguruma.Server"));
+        startInfo.Environment["ITOGURUMA_DB"] = databasePath;
+        startInfo.Environment["ITOGURUMA_URL"] = serverUrl;
+        startInfo.Environment["ITOGURUMA_AUTH_TOKEN"] = authenticationToken;
+        startInfo.Environment["ITOGURUMA_LOG_DIR"] = Path.Combine(
+            Path.GetDirectoryName(databasePath)!, "logs");
+        return startInfo;
+    }
+
+    private static JsonDocument ParseMcpResponse(string responseBody)
+    {
+        const string dataPrefix = "data: ";
+        var json = responseBody.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(line => line.StartsWith(dataPrefix, StringComparison.Ordinal))?[dataPrefix.Length..]
+            ?? responseBody;
+        return JsonDocument.Parse(json);
+    }
+
+    private static int GetAvailablePort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
     }
 
     private static async Task<ProcessResult> RunAsync(
@@ -258,4 +402,25 @@ public sealed class ProcessIntegrationTests : IDisposable
         string StandardOutput,
         string StandardError,
         IReadOnlyList<JsonDocument> Output);
+
+    private sealed class RunningMcpServer(
+        Process process,
+        Task<string> standardOutput,
+        Task<string> standardError,
+        string serverUrl,
+        string authenticationToken) : IAsyncDisposable
+    {
+        public string ServerUrl { get; } = serverUrl;
+        public string AuthenticationToken { get; } = authenticationToken;
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await process.WaitForExitAsync(timeout.Token);
+            await standardOutput;
+            await standardError;
+            process.Dispose();
+        }
+    }
 }

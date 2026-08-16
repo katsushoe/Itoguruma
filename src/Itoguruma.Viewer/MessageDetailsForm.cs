@@ -18,29 +18,23 @@ public sealed partial class MessageDetailsForm : Form
 
         InitializeComponent();
         Text = $"メッセージ詳細 - {message.MessageId}";
-        detailsTextBox.Text = FormatMessage(message);
+        AddRow("Message ID", message.MessageId);
+        AddRow("Thread ID", message.ThreadId);
+        AddRow("From", message.SenderAgentId);
+        AddRow("To", message.RecipientAgentId);
+        AddRow("Type", message.MessageType);
+        AddRow("Status", message.DeliveryStatus);
+        AddRow("Created", Local(message.CreatedAt));
+        AddRow("Lease until", Local(message.LeaseUntil));
+        AddRow("Delivered", Local(message.DeliveredAt));
+        AddRow("Acknowledged", Local(message.AcknowledgedAt));
+        AddRow("Reply to", message.ReplyToMessageId);
+        AddRow("Idempotency key", message.IdempotencyKey);
+        AddRow("Body", message.Body);
+        AddRow("Payload JSON", message.PayloadJson);
     }
 
-    private static string FormatMessage(MonitoredMessage message) => $"""
-        Message ID: {message.MessageId}
-        Thread ID: {message.ThreadId}
-        From: {message.SenderAgentId}
-        To: {message.RecipientAgentId}
-        Type: {message.MessageType}
-        Status: {message.DeliveryStatus}
-        Created: {Local(message.CreatedAt)}
-        Lease until: {Local(message.LeaseUntil)}
-        Delivered: {Local(message.DeliveredAt)}
-        Acknowledged: {Local(message.AcknowledgedAt)}
-        Reply to: {message.ReplyToMessageId}
-        Idempotency key: {message.IdempotencyKey}
-
-        Body:
-        {message.Body}
-
-        Payload JSON:
-        {message.PayloadJson}
-        """;
+    private void AddRow(string item, string? value) => detailsGrid.Rows.Add(item, value ?? "");
 
     private static string Local(DateTimeOffset? value) =>
         value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? "";
