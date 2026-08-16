@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Itoguruma.Cli;
 using Itoguruma.Core;
 
 var arguments = args.ToList();
@@ -7,6 +8,19 @@ if (arguments[0] is "version" or "--version")
 {
     Console.WriteLine($"itoguruma {ProductInfo.Version}");
     return 0;
+}
+if (arguments[0] == "auth")
+{
+    try
+    {
+        return new AuthCommand(new UserEnvironmentTokenStore(), Console.In, Console.Out, Console.Error)
+            .Run(arguments.Skip(1).ToList());
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 2;
+    }
 }
 var db = Option("--db") ?? Environment.GetEnvironmentVariable("ITOGURUMA_DB")
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
@@ -30,7 +44,7 @@ catch(Exception ex) { Console.Error.WriteLine(ex.Message); return 2; }
 string? Option(string name) { var i=arguments.IndexOf(name); return i>=0 && i+1<arguments.Count ? arguments[i+1] : null; }
 string Required(string name) => Option(name) ?? throw new ArgumentException($"Missing option: {name}");
 int Number(string name,int fallback) => int.TryParse(Option(name),out var value) ? value : fallback;
-static int Usage() { Console.WriteLine("itoguruma register|agents|send|inbox|ack|hook|version [options]\nSet ITOGURUMA_DB or pass --db <path>."); return 0; }
+static int Usage() { Console.WriteLine("itoguruma register|agents|send|inbox|ack|hook|auth|version [options]\nSet ITOGURUMA_DB or pass --db <path>."); return 0; }
 
 async Task<int> RunHookAsync(MessagingService messagingService, string agentId)
 {
