@@ -112,6 +112,8 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 .\scripts\Build-Release.ps1 -Version 0.3.1
 ```
 
+正式なReleaseはGitHub Actionsの`Release`を手動実行し、`version`へ`0.3.5`または`v0.3.5`形式で指定します。ワークフローは常に`main`をチェックアウトし、ビルドとテストの成功後にタグとGitHub Releaseを作成します。手元からReleaseタグをpushしないでください。設計意図は[ADR 0002](docs/adr/0002-release-from-main-workflow-dispatch.md)を参照してください。
+
 ## 初期設定と往復確認
 
 ```powershell

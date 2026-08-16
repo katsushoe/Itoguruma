@@ -1,9 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example: 0.3.5 or v0.3.5)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,6 +20,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Set up .NET 8
@@ -24,12 +28,25 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Verify tag belongs to main
+      - name: Validate release version and main
+        id: release
         shell: pwsh
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
         run: |
-          git fetch origin main
-          git merge-base --is-ancestor HEAD origin/main
-          if ($LASTEXITCODE -ne 0) { throw "Release tag must belong to main." }
+          $inputVersion = $env:RELEASE_VERSION_INPUT
+          $version = $inputVersion.Trim().TrimStart("v")
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Release version must use semantic version format: 0.3.5 or v0.3.5."
+          }
+
+          git fetch origin main --tags
+          if ((git rev-parse HEAD) -ne (git rev-parse origin/main)) {
+            throw "Checked out commit must match origin/main."
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
 
       - name: Restore dependencies
         run: dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj
@@ -42,15 +59,32 @@ jobs:
 
       - name: Build release assets
         shell: pwsh
-        run: ./scripts/Build-Release.ps1 -Version "${{ github.ref_name }}"
+        run: ./scripts/Build-Release.ps1 -Version "${{ steps.release.outputs.version }}"
+
+      - name: Ensure release tag
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.release.outputs.tag }}"
+          git rev-parse --verify --quiet "refs/tags/$tag" | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            $tagCommit = git rev-list -n 1 $tag
+            if ($tagCommit -ne (git rev-parse HEAD)) {
+              throw "Release tag $tag already points to a different commit."
+            }
+          } else {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag --annotate $tag --message "Itoguruma ${{ steps.release.outputs.version }}"
+            git push origin "refs/tags/$tag"
+          }
 
       - name: Create GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          $version = "${{ github.ref_name }}".TrimStart("v")
+          $tag = "${{ steps.release.outputs.tag }}"
+          $version = "${{ steps.release.outputs.version }}"
           $assets = @(
             "release/$version/Install-Itoguruma.ps1"
             "release/$version/Itoguruma-$version-win-x64.zip"
