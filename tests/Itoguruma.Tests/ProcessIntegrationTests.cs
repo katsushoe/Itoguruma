@@ -42,7 +42,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(5, result.Output.Count);
         Assert.All(result.Output, response => Assert.False(response.RootElement.TryGetProperty("error", out _)));
-        Assert.Equal("0.3.5", result.Output[0].RootElement.GetProperty("result")
+        Assert.Equal("0.3.6", result.Output[0].RootElement.GetProperty("result")
             .GetProperty("serverInfo").GetProperty("version").GetString());
         var messages = StructuredData(result.Output[4]);
         var message = Assert.Single(messages.EnumerateArray());
@@ -93,6 +93,36 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpServer_WhenMessageHasNoRecipient_ReturnsAiFriendlyJsonError()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-no-recipient.db");
+        var requests = new[]
+        {
+            ToolRequest(1, "register_agent", new { agent_id = "sender", agent_type = "test" }),
+            ToolRequest(2, "send_message", new
+            {
+                sender_agent_id = "sender",
+                body = "integration message",
+                thread_id = "integration"
+            })
+        };
+
+        var result = await RunMcpAsync(requests, databasePath);
+
+        Assert.Equal(0, result.ExitCode);
+        var toolResult = result.Output[1].RootElement.GetProperty("result");
+        Assert.True(toolResult.TryGetProperty("isError", out var isError), toolResult.GetRawText());
+        Assert.True(isError.GetBoolean());
+        using var errorDocument = JsonDocument.Parse(
+            toolResult.GetProperty("content")[0].GetProperty("text").GetString()!);
+        var data = errorDocument.RootElement;
+        Assert.Equal("invalid_argument", data.GetProperty("errorCode").GetString());
+        Assert.Equal("validation/argument", data.GetProperty("category").GetString());
+        Assert.Contains("recipient", data.GetProperty("summary").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.True(data.GetProperty("retryable").GetBoolean());
+    }
+
+    [Fact]
     public async Task McpServer_WhenToolsAreListed_DescribesErrorCategoryCatalog()
     {
         var result = await RunMcpAsync(
@@ -105,6 +135,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var description = sendMessage.GetProperty("description").GetString();
         Assert.Contains("| Category | Meaning | Recommended response |", description, StringComparison.Ordinal);
         Assert.Contains("`sqlite/table/write/reference_key`", description, StringComparison.Ordinal);
+        Assert.Contains("`validation/argument`", description, StringComparison.Ordinal);
         Assert.Contains("`internal`", description, StringComparison.Ordinal);
     }
 
@@ -117,7 +148,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         var version = StructuredData(result.Output[0]);
         Assert.Equal("itoguruma", version.GetProperty("name").GetString());
-        Assert.Equal("0.3.5", version.GetProperty("version").GetString());
+        Assert.Equal("0.3.6", version.GetProperty("version").GetString());
     }
 
     [Fact]
@@ -216,7 +247,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var result = await RunAsync("itoguruma", ["version"], Path.Combine(_directory, "version.db"), string.Empty);
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal("itoguruma 0.3.5", result.StandardOutput.Trim());
+        Assert.Equal("itoguruma 0.3.6", result.StandardOutput.Trim());
         Assert.False(File.Exists(Path.Combine(_directory, "version.db")));
     }
 
