@@ -208,6 +208,28 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         return messages.OrderBy(x => x.CreatedAt).ToArray();
     }
 
+    public async Task<IReadOnlyList<ConversationMessage>> GetConversationHistoryAsync(string threadId, int limit = 100,
+        int offset = 0, CancellationToken cancellationToken = default)
+    {
+        RequireText(threadId, nameof(threadId));
+        if (limit is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(limit));
+        if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
+        var history = new List<ConversationMessage>();
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT message_id,thread_id,sender_agent_id,reply_to_message_id,message_type,body,payload_json,created_at
+            FROM messages WHERE thread_id=$thread ORDER BY created_at ASC LIMIT $limit OFFSET $offset;
+            """;
+        Add(command, "$thread", threadId); Add(command, "$limit", limit); Add(command, "$offset", offset);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            history.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetString(4), reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6), Parse(reader.GetString(7))));
+        return history;
+    }
+
     public async Task<bool> AckMessageAsync(string agentId, string messageId, CancellationToken cancellationToken = default)
     {
         var now = Format(Now());

@@ -100,6 +100,15 @@ public sealed class ItogurumaTools(MessagingService service)
         CancellationToken cancellationToken = default) =>
         new(new(await service.AckMessageAsync(agent_id, message_id, cancellationToken)));
 
+    /// <summary>指定Threadの既読・過去分を含む履歴を時系列で返します。</summary>
+    [McpServerTool(Name = "get_conversation_history", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Return the full message history for a thread_id (conversation id), oldest first, " +
+        "including already-acked messages. Returns an empty array for a thread_id with no messages, " +
+        "including one that does not exist. Use limit and offset to page through long threads.")]
+    public async Task<ToolData<IReadOnlyList<ConversationMessage>>> GetConversationHistory(string thread_id,
+        int limit = 100, int offset = 0, CancellationToken cancellationToken = default) =>
+        new(await service.GetConversationHistoryAsync(thread_id, limit, offset, cancellationToken));
+
     private static CallToolResult CreateResult<T>(T data, bool isError = false)
     {
         var wrapped = new ToolData<T>(data);

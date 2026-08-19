@@ -10,4 +10,6 @@ public interface IMessageStore
     Task<IReadOnlyList<Message>> GetMessagesAsync(string agentId, int limit = 50,
         TimeSpan? leaseDuration = null, string? threadId = null, CancellationToken cancellationToken = default);
     Task<bool> AckMessageAsync(string agentId, string messageId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ConversationMessage>> GetConversationHistoryAsync(string threadId, int limit = 100,
+        int offset = 0, CancellationToken cancellationToken = default);
 }

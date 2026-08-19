@@ -45,6 +45,7 @@ itoguruma auth rotate
 | `send_message` | `sender_agent_id`, `body`, `thread_id`と宛先 | `reply_to_message_id`, `message_type`, `payload_json`, `idempotency_key` | 1件以上の宛先へ送信します。 |
 | `get_messages` | `agent_id` | `limit`, `lease_seconds`, `thread_id` | 配送可能なメッセージをleaseして取得します。 |
 | `ack_message` | `agent_id`, `message_id` | なし | lease済み配送をACKします。 |
+| `get_conversation_history` | `thread_id` | `limit`, `offset` | 指定Threadの既読・過去分を含む全メッセージ履歴を、作成日時の昇順で返します。該当Threadが存在しない場合は空配列を返します。 |
 
 `send_message`の宛先は、単一宛先なら`recipient`、複数宛先なら`recipients`を使います。`message_type`は`message`、`notification`、`system`のいずれかです。
 
