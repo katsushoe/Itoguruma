@@ -34,6 +34,10 @@ public sealed class MessagingService(IMessageStore store)
     public Task<bool> AckMessageAsync(string agentId, string messageId, CancellationToken cancellationToken = default) =>
         store.AckMessageAsync(agentId, messageId, cancellationToken);
 
+    public Task<IReadOnlyList<ConversationMessage>> GetConversationHistoryAsync(string threadId, int limit = 100,
+        int offset = 0, CancellationToken cancellationToken = default) =>
+        store.GetConversationHistoryAsync(threadId, limit, offset, cancellationToken);
+
     private static void ValidateJson(string? value, string name)
     {
         if (value is null) return;
