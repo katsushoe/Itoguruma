@@ -8,6 +8,7 @@
 | :--- | :--- | :--- | :--- |
 | `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Agentを登録またはheartbeat更新します。 |
 | `itoguruma agents` | なし | `--db` | 登録済みAgentを一覧表示します。 |
+| `itoguruma unregister` | `--agent` | `--db` | Agent登録を削除します。既存メッセージから参照されているAgentは削除できません。 |
 | `itoguruma send` | `--from`, `--to`, `--body`, `--thread` | `--reply-to`, `--idempotency-key`, `--db` | メッセージを永続化して配送待ちにします。 |
 | `itoguruma inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | 未処理メッセージをleaseして取得します。 |
 | `itoguruma ack` | `--agent`, `--message` | `--db` | lease済みメッセージをACKします。 |
@@ -24,6 +25,7 @@ itoguruma register --agent claude-main --type claude-code
 itoguruma register --agent codex-main --type codex
 itoguruma version
 itoguruma agents
+itoguruma unregister --agent claude-main
 itoguruma send --from claude-main --to codex-main --thread setup --body "確認してください" --idempotency-key setup-1
 itoguruma inbox --agent codex-main --lease-seconds 300
 itoguruma ack --agent codex-main --message <messageId>
@@ -42,6 +44,7 @@ itoguruma auth rotate
 | `get_version` | なし | なし | 実行中のItoguruma MCP Serverバージョンを返します。 |
 | `register_agent` | `agent_id`, `agent_type` | `name`, `session_id`, `metadata_json` | Agentを登録またはheartbeat更新します。 |
 | `list_agents` | なし | なし | 登録済みAgentを一覧表示します。 |
+| `unregister_agent` | `agent_id` | なし | Agent登録を削除します。既存メッセージから参照されているAgentは削除できません。 |
 | `send_message` | `sender_agent_id`, `body`, `thread_id`と宛先 | `reply_to_message_id`, `message_type`, `payload_json`, `idempotency_key` | 1件以上の宛先へ送信します。 |
 | `get_messages` | `agent_id` | `limit`, `lease_seconds`, `thread_id` | 配送可能なメッセージをleaseして取得します。 |
 | `ack_message` | `agent_id`, `message_id` | なし | lease済み配送をACKします。 |
