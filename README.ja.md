@@ -2,114 +2,23 @@
 
 [English](README.md) | [日本語](README.ja.md)
 
-Claude Code、Codexなどの独立したAIエージェント間で、SQLiteを正本としてメッセージを交換する常駐型MCP Streamable HTTPサーバーです。
+Itogurumaは、Claude CodeやCodexなどの独立したAIエージェントが、共有SQLiteデータベースを介してメッセージを交換する常駐型MCP Streamable HTTPサーバーです。
 
-## ユースケース
+## はじめに
 
-```mermaid
-flowchart LR
-    subgraph Agents["AI Agents"]
-        direction TB
-        Claude["Claude Code"]
-        Codex["Codex"]
-    end
-
-    subgraph Itoguruma["Itoguruma MCP Server"]
-        direction TB
-        Messaging["メッセージ送受信"]
-        Store[("共有SQLite")]
-        ClaudeInbox["Claude CodeのInbox"]
-        CodexInbox["CodexのInbox"]
-
-        Messaging --> Store
-        Store --> ClaudeInbox
-        Store --> CodexInbox
-    end
-
-    Claude -- "Codex宛を送信" --> Messaging
-    Codex -- "Claude Code宛を送信" --> Messaging
-    ClaudeInbox -- "MCP／Hookで受信" --> Claude
-    CodexInbox -- "MCP／Hookで受信" --> Codex
-```
-
-Claude CodeとCodexは送信側・受信側のどちらにもなれます。送信されたメッセージは共有SQLiteへ保存され、宛先AgentのInboxに並びます。受信側はMCP ToolまたはライフサイクルHookでInboxの新着を受け取ります。相手が停止中でもメッセージは消えず、次回のInbox確認時に配信されます。
-
-## 配布物
-
-GitHub Releasesでは、利用目的ごとに配布物を分けます。
-
-| 配布物 | 対象 | .NET 8 SDK |
-| :--- | :--- | :---: |
-| `Install-Itoguruma.ps1` | 通常利用者向けインストーラ | 不要 |
-| `Itoguruma-x.x.x-win-x64.zip` | 手動配置・オフライン利用向けself-containedバイナリ | 不要 |
-| `Source code (zip/tar.gz)` | 開発者向けソース配布 | 必要 |
-
-コマンドの詳細は[COMMANDS.ja.md](COMMANDS.ja.md)、Claude Code／Codex Hookの導入手順は[MCP_SETUP.ja.md](MCP_SETUP.ja.md)を参照してください。
-
-## インストーラ版
-
-GitHub Releasesから`Install-Itoguruma.ps1`をダウンロードし、PowerShellで実行します。
+最新Releaseをインストールし、ターミナルとAIクライアントを再起動して往復通信を確認します。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
+itoguruma register --agent codex-main --type codex
+itoguruma register --agent claude-main --type claude-code
+itoguruma send --from codex-main --to claude-main --thread setup --body "Hello" --idempotency-key setup-1
+itoguruma inbox --agent claude-main --lease-seconds 300
 ```
 
-インストーラは次の処理を行います。
+## インストール
 
-- 最新のWindows x64バイナリZIPを取得
-- `%LOCALAPPDATA%\Programs\Itoguruma`へ配置
-- `%LOCALAPPDATA%\Programs\Itoguruma\data\messages.db`を共有DBとして準備
-- `itoguruma`、`stop-codex`、`stop-claude`をユーザーPATHへ登録
-- インストール済みのCodexとClaude Codeへ`itoguruma` MCPを登録
-- localhost限定HTTPサーバーを起動し、ユーザー単位のスケジュールタスクへ登録
-- 読み取り専用メッセージビューワーを配置
-
-完了後、新しいターミナルを開き、CodexとClaude Codeを再起動してください。既存のDBは上書き・削除しません。インストーラのオプションは[コマンド一覧](COMMANDS.ja.md#インストーラオプション)を参照してください。
-
-認証トークンの紛失・侵害が疑われる場合は、値を表示せず状態を確認し、専用コマンドでローテーションできます。
-
-```powershell
-itoguruma auth status
-itoguruma auth rotate
-```
-
-ローテーション直後から旧トークンは利用できません。表示される案内に従い、Serverを再起動し、Codex／Claude Code／Hataoriを再設定または再起動してください。詳細は[認証コマンド](COMMANDS.ja.md#cliコマンド)を参照してください。
-
-## バイナリZIP版
-
-`Itoguruma-x.x.x-win-x64.zip`を任意のディレクトリへ展開します。ZIPは.NETランタイムを同梱するため、.NET 8 SDKは不要です。
-
-```text
-bin/
-├─ server/Itoguruma.Server.exe
-├─ itoguruma/itoguruma.exe
-├─ viewer/itoguruma-viewer.exe
-├─ stop-codex/stop-codex.exe
-└─ stop-claude/stop-claude.exe
-examples/claude-settings.json
-examples/codex-hooks.json
-README.md
-COMMANDS.md
-```
-
-手動登録では、認証トークン、DB、待受URLをユーザー環境変数へ設定してサーバーを起動します。
-
-```powershell
-$env:ITOGURUMA_AUTH_TOKEN = "<十分に長いランダム値>"
-$env:ITOGURUMA_DB = "<install>\data\messages.db"
-$env:ITOGURUMA_URL = "http://127.0.0.1:47631"
-$env:ITOGURUMA_CONFIG_DIR = "<install>\config"
-$env:ITOGURUMA_LOG_DIR = "<install>\logs"
-Start-Process "<install>\bin\server\Itoguruma.Server.exe" -WindowStyle Hidden
-codex mcp add itoguruma --url "http://127.0.0.1:47631/mcp" --bearer-token-env-var ITOGURUMA_AUTH_TOKEN
-claude mcp add --transport http --scope user --header "Authorization: Bearer $env:ITOGURUMA_AUTH_TOKEN" itoguruma "http://127.0.0.1:47631/mcp"
-```
-
-`Itoguruma.Server`はURL単位およびDB単位の名前付きMutexで多重起動を拒否します。スケジュールタスクはログオン時に起動し、異常終了時は最大3回再起動します。MCPエンドポイントはBearer認証を必須とし、Originがある場合はloopbackだけを許可します。
-
-## ソース版
-
-ソースからビルドする開発者だけが.NET 8 SDKを必要とします。
+GitHub Releasesは`Install-Itoguruma.ps1`と、自己完結型の`Itoguruma-x.x.x-win-x64.zip`を提供します。どちらも.NET SDKは不要です。ソースからビルドする場合は.NET 8 SDKが必要です。
 
 ```powershell
 dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj
@@ -117,90 +26,30 @@ dotnet build tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-restor
 dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 ```
 
-配布物をローカル生成する場合:
+## 設定
 
-```powershell
-.\scripts\Build-Release.ps1 -Version 0.3.1
-```
+サーバーには`ITOGURUMA_AUTH_TOKEN`が必須です。`ITOGURUMA_URL`、`ITOGURUMA_DB`、`ITOGURUMA_CONFIG_DIR`、`ITOGURUMA_LOG_DIR`、`ITOGURUMA_CR_ROOT`も使用できます。詳細は[CONFIG.ja.md](CONFIG.ja.md)を参照してください。
 
-正式なReleaseはGitHub Actionsの`Release`を手動実行し、`version`へ`0.3.5`または`v0.3.5`形式で指定します。ワークフローは常に`main`をチェックアウトし、ビルドとテストの成功後にタグとGitHub Releaseを作成します。手元からReleaseタグをpushしないでください。設計意図は[ADR 0002](docs/adr/0002-release-from-main-workflow-dispatch.md)を参照してください。
+## 使用方法
 
-## 初期設定と往復確認
+メッセージは`pending`、`leased`、`acked`の配送状態を遷移します。ACK前にleaseが失効すると再配送されます。同じ論理送信を再試行するときは、同じ`idempotency_key`を使用してください。詳細は[COMMANDS.ja.md](COMMANDS.ja.md)を参照してください。
 
-```powershell
-itoguruma register --agent claude-main --type claude-code
-itoguruma register --agent codex-main --type codex
-itoguruma send --from claude-main --to codex-main --thread setup-check --body "疎通確認" --idempotency-key setup-check-1
-itoguruma inbox --agent codex-main --lease-seconds 300
-itoguruma ack --agent codex-main --message <messageId>
-```
-
-各セッションからMCP Toolを使う場合も、最初に`register_agent`を呼び出します。受信処理が完了したメッセージは必ずACKしてください。ACK前に受信側が停止した場合、lease期限後に再配送されます。送信再試行では同じ`idempotency_key`を使用してください。
-
-## 正式な変更依頼（CR）
-
-CR配送では共有CR領域のMarkdownファイルを正本とし、Itogurumaは検証済みパスと索引情報だけを`change_request`メッセージとして保存します。サーバーへ`ITOGURUMA_CR_ROOT`（または`Itoguruma:CrRoot`）を設定し、登録済み担当Agentを`recipient`または`recipients`で明示してください。宛先不明またはCR検証失敗時に通常メッセージへ自動変換しません。設計意図は[ADR 0003](docs/adr/0003-canonical-change-request-delivery.md)を参照してください。
-
-payload schema version 1は次の形式です。
-
-```json
-{
-  "schema_version": 1,
-  "cr_path": "<共有CRルート配下の絶対パス>",
-  "source_project": "Buckettie",
-  "target_project": "Itoguruma",
-  "priority": "中",
-  "status": "未着手"
-}
-```
-
-`cr_path`は`inbox/<target_project>/`直下の既存`.md`に限定されます。CR本文には依頼元、依頼先、優先度、状態、背景、依頼内容、完了条件、受け取り結果が必要です。状態は`未着手`、`対応中`、`完了`、`分割済み`を使用します。`inspect_change_request`はpayloadの起票時状態と正本ファイルの現在状態を比較します。
-
-Hookを使う場合は、インストーラが生成する`examples/claude-settings.json`または`examples/codex-hooks.json`を既存設定へ統合します。設定場所、Hookごとの動作、ACK、疎通確認は[MCP設定ガイド](MCP_SETUP.ja.md)を参照してください。
+正式な変更依頼（CR）は、設定した共有CRルート内の検証済みMarkdownファイルを正本とします。無効なCRを通常メッセージへ自動変換しません。
 
 ## ドキュメント
 
 - [設定](CONFIG.ja.md)
 - [コマンドとMCP Tool](COMMANDS.ja.md)
 - [MCPクライアント設定](MCP_SETUP.ja.md)
-- [依存パッケージ](PACKAGES.md)（英語）
-- [セキュリティ](SECURITY.md)（英語）
+- [Hook設定](HOOKS.ja.md)
+- [依存パッケージ](PACKAGES.ja.md)
+- [セキュリティ](SECURITY.ja.md)
+- [アーキテクチャ判断](docs/adr/0001-streamable-http-server.md)
+
+## セキュリティ
+
+Bearerトークンを秘密情報として管理し、サービスはloopbackに限定してください。侵害が疑われる場合は`itoguruma auth rotate`でローテーションします。詳細は[SECURITY.ja.md](SECURITY.ja.md)を参照してください。
 
 ## ライセンス
 
 現時点では、リポジトリ所有者が配布ページで明示する条件を除き、再利用または再配布のライセンスは付与されていません。
-
-## メッセージビューワー
-
-`itoguruma-viewer.exe`は共有SQLiteを読み取り専用で監視するWindows GUIです。インストーラ版では次から起動できます。
-
-```powershell
-& "$env:LOCALAPPDATA\Programs\Itoguruma\bin\viewer\itoguruma-viewer.exe"
-```
-
-Codex本体と関連プロセスを強制終了する場合は`stop-codex`を使用します。実行前に対象だけを確認できます。
-
-```powershell
-stop-codex --list
-stop-codex
-```
-
-Claude CodeとClaudeデスクトップ本体を強制終了する場合は`stop-claude`を使用します。
-
-```powershell
-stop-claude --list
-stop-claude
-```
-
-ビューワーでは、メッセージの送信元・宛先・thread・本文、`pending`／`leased`／`acked`の配送状態、lease期限、ACK時刻を確認できます。状態・Agent・キーワードで絞り込みでき、既定では2秒間隔で自動更新します。DBを更新せず、メッセージをleaseまたはACKしません。別のDBを開く場合は画面上部の「参照」または第1コマンドライン引数で指定します。
-
-## 主な機能
-
-- append-onlyのメッセージ本文と、分離した`pending → leased → acked`配送状態
-- lease期限切れによるat-least-once再配送
-- sender単位の`idempotency_key`による重複送信防止
-- WAL、FULL同期、外部キー、5秒のbusy timeout
-- thread、reply-to、複数宛先
-- Claude Code／Codex Hookから利用できる`itoguruma` CLI
-
-MCP Streamable HTTP → `MessagingService` → `IMessageStore` → `SqliteMessageStore`の順に分離しています。ビューワーもUI → `IMessageMonitor` → `SqliteMessageMonitor`としてSQLiteアクセスを分離しています。Idle状態のAgentを起こすSupervisor、Task/Project管理、Broadcast、全文検索、Web UIは対象外です。

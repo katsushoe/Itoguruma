@@ -41,6 +41,7 @@ Formal change requests use a validated Markdown file under the configured shared
 - [Configuration](CONFIG.md)
 - [Commands and MCP tools](COMMANDS.md)
 - [MCP client setup](MCP_SETUP.md)
+- [Lifecycle hook setup](HOOKS.md)
 - [Package dependencies](PACKAGES.md)
 - [Security](SECURITY.md)
 - [Architecture decisions](docs/adr/0001-streamable-http-server.md)

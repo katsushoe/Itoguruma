@@ -1,5 +1,7 @@
 # Security policy
 
+[English](SECURITY.md) | [日本語](SECURITY.ja.md)
+
 ## Supported deployment
 
 Itoguruma is designed for a single Windows user and a loopback-only HTTP endpoint. Do not expose the MCP endpoint to a network interface or share its SQLite database with untrusted users.

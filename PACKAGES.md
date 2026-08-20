@@ -1,5 +1,7 @@
 # Itoguruma packages
 
+[English](PACKAGES.md) | [日本語](PACKAGES.ja.md)
+
 ## Direct dependencies
 
 | Project | Package | Version | Purpose |
