@@ -1,4 +1,5 @@
 using Itoguruma.Core;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Itoguruma.Tests;
@@ -150,6 +151,50 @@ public sealed class MessagingStoreTests : IDisposable
 
         await Assert.ThrowsAnyAsync<Exception>(()=>store.UnregisterAgentAsync("a"));
         Assert.Contains(await store.ListAgentsAsync(), agent=>agent.AgentId=="a");
+    }
+
+    [Fact]
+    public async Task Initialize_WhenSchemaVersionIsTwo_MigratesAndAcceptsChangeRequest()
+    {
+        Directory.CreateDirectory(_directory);
+        var databasePath = Path.Combine(_directory, "messages.db");
+        await using (var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE agents (
+                  agent_id TEXT PRIMARY KEY, name TEXT NOT NULL, agent_type TEXT NOT NULL,
+                  session_id TEXT NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
+                  metadata_json TEXT NULL);
+                CREATE TABLE messages (
+                  message_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL,
+                  sender_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+                  reply_to_message_id TEXT NULL REFERENCES messages(message_id),
+                  message_type TEXT NOT NULL CHECK(message_type IN ('message','notification','system')),
+                  body TEXT NOT NULL, payload_json TEXT NULL, created_at TEXT NOT NULL,
+                  idempotency_key TEXT NULL);
+                CREATE TABLE message_deliveries (
+                  message_id TEXT NOT NULL REFERENCES messages(message_id),
+                  recipient_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+                  status TEXT NOT NULL CHECK(status IN ('pending','leased','acked')),
+                  lease_until TEXT NULL, delivered_at TEXT NULL, acked_at TEXT NULL,
+                  PRIMARY KEY(message_id,recipient_agent_id));
+                PRAGMA user_version=2;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        var store = new SqliteMessageStore(databasePath);
+        await store.InitializeAsync();
+        await store.RegisterAgentAsync("a", "test");
+        await store.RegisterAgentAsync("b", "test");
+
+        await store.SendMessageAsync(new("a", ["b"], "cr", "t",
+            MessageType: "change_request", PayloadJson: "{}"));
+
+        var message = Assert.Single(await store.GetMessagesAsync("b"));
+        Assert.Equal("change_request", message.MessageType);
     }
 
     public void Dispose() { if(Directory.Exists(_directory)) Directory.Delete(_directory,true); }

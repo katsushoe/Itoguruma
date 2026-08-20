@@ -118,8 +118,15 @@ try {
         "examples\claude-settings.json",
         "examples\codex-hooks.json",
         "README.md",
+        "README.ja.md",
         "COMMANDS.md",
-        "HOOKS.md"
+        "COMMANDS.ja.md",
+        "CONFIG.md",
+        "CONFIG.ja.md",
+        "MCP_SETUP.md",
+        "MCP_SETUP.ja.md",
+        "PACKAGES.md",
+        "SECURITY.md"
     )
     foreach ($relativePath in $requiredFiles) {
         if (!(Test-Path -LiteralPath (Join-Path $extractRoot $relativePath) -PathType Leaf)) {

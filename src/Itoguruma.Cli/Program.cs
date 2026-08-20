@@ -33,8 +33,8 @@ try
         "register" => await service.RegisterAgentAsync(Required("--agent"), Required("--type"), Option("--name"), Option("--session"), Option("--metadata")),
         "agents" => await service.ListAgentsAsync(),
         "unregister" => new { unregistered = await service.UnregisterAgentAsync(Required("--agent")) },
-        "send" => new { message_id = await service.SendMessageAsync(new(Required("--from"), [Required("--to")], Required("--body"), Required("--thread"), Option("--reply-to"), IdempotencyKey: Option("--idempotency-key"))) },
-        "inbox" => await service.GetMessagesAsync(Required("--agent"), Number("--limit",50), TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread")),
+        "send" => new { message_id = await service.SendMessageAsync(new(Required("--from"), [Required("--to")], Required("--body"), Required("--thread"), Option("--reply-to"), Option("--message-type") ?? "message", Option("--payload-json"), Option("--idempotency-key"))) },
+        "inbox" => await service.GetMessagesAsync(Required("--agent"), Number("--limit",50), TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"), Option("--message-type")),
         "ack" => new { acked = await service.AckMessageAsync(Required("--agent"), Required("--message")) },
         _ => throw new ArgumentException($"Unknown command: {arguments[0]}")
     };
