@@ -44,6 +44,27 @@ public sealed class ItogurumaTools(MessagingService service)
     public async Task<ToolData<IReadOnlyList<Agent>>> ListAgents(CancellationToken cancellationToken = default) =>
         new(await service.ListAgentsAsync(cancellationToken));
 
+    /// <summary>エージェント登録を削除します。</summary>
+    [McpServerTool(Name = "unregister_agent", UseStructuredContent = true)]
+    [Description("Remove an agent registration. Fails if the agent is referenced by existing messages or deliveries.")]
+    public async Task<CallToolResult> UnregisterAgent(string agent_id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var unregistered = await service.UnregisterAgentAsync(agent_id, cancellationToken);
+            return CreateResult(new UnregisterResult(unregistered));
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return CreateResult(new ToolError(
+                "agent_referenced",
+                "sqlite/table/write/reference_key",
+                "Itoguruma rejected the removal because this agent is referenced by existing messages or deliveries.",
+                "This agent has message history and cannot be removed without deleting that history first.",
+                false), isError: true);
+        }
+    }
+
     /// <summary>メッセージを冪等に送信します。</summary>
     [McpServerTool(Name = "send_message", Idempotent = true, UseStructuredContent = true,
         OutputSchemaType = typeof(ToolData<MessageSentResult>))]
@@ -132,6 +153,9 @@ public sealed record MessageSentResult(string MessageId);
 
 /// <summary>メッセージ確認結果です。</summary>
 public sealed record AcknowledgementResult(bool Acked);
+
+/// <summary>エージェント削除結果です。</summary>
+public sealed record UnregisterResult(bool Unregistered);
 
 /// <summary>AIが回復方法を判断できるツールエラーです。</summary>
 public sealed record ToolError(

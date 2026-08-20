@@ -32,6 +32,7 @@ try
     {
         "register" => await service.RegisterAgentAsync(Required("--agent"), Required("--type"), Option("--name"), Option("--session"), Option("--metadata")),
         "agents" => await service.ListAgentsAsync(),
+        "unregister" => new { unregistered = await service.UnregisterAgentAsync(Required("--agent")) },
         "send" => new { message_id = await service.SendMessageAsync(new(Required("--from"), [Required("--to")], Required("--body"), Required("--thread"), Option("--reply-to"), IdempotencyKey: Option("--idempotency-key"))) },
         "inbox" => await service.GetMessagesAsync(Required("--agent"), Number("--limit",50), TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread")),
         "ack" => new { acked = await service.AckMessageAsync(Required("--agent"), Required("--message")) },
@@ -44,7 +45,7 @@ catch(Exception ex) { Console.Error.WriteLine(ex.Message); return 2; }
 string? Option(string name) { var i=arguments.IndexOf(name); return i>=0 && i+1<arguments.Count ? arguments[i+1] : null; }
 string Required(string name) => Option(name) ?? throw new ArgumentException($"Missing option: {name}");
 int Number(string name,int fallback) => int.TryParse(Option(name),out var value) ? value : fallback;
-static int Usage() { Console.WriteLine("itoguruma register|agents|send|inbox|ack|hook|auth|version [options]\nSet ITOGURUMA_DB or pass --db <path>."); return 0; }
+static int Usage() { Console.WriteLine("itoguruma register|agents|unregister|send|inbox|ack|hook|auth|version [options]\nSet ITOGURUMA_DB or pass --db <path>."); return 0; }
 
 async Task<int> RunHookAsync(MessagingService messagingService, string agentId)
 {

@@ -19,6 +19,9 @@ public sealed class MessagingService(IMessageStore store)
     public Task<IReadOnlyList<Agent>> ListAgentsAsync(CancellationToken cancellationToken = default) =>
         store.ListAgentsAsync(cancellationToken);
 
+    public Task<bool> UnregisterAgentAsync(string agentId, CancellationToken cancellationToken = default) =>
+        store.UnregisterAgentAsync(agentId, cancellationToken);
+
     public Task<string> SendMessageAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
     {
         if (!MessageTypes.Contains(request.MessageType))

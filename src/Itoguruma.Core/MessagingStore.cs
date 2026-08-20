@@ -107,6 +107,16 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         return agents;
     }
 
+    public async Task<bool> UnregisterAgentAsync(string agentId, CancellationToken cancellationToken = default)
+    {
+        RequireText(agentId, nameof(agentId));
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM agents WHERE agent_id=$id;";
+        Add(command, "$id", agentId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
     public async Task<string> SendMessageAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
     {
         RequireText(request.SenderAgentId, nameof(request.SenderAgentId));

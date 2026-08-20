@@ -123,5 +123,34 @@ public sealed class MessagingStoreTests : IDisposable
         Assert.Equal(["m2","m3"],secondPage.Select(x=>x.Body));
     }
 
+    [Fact]
+    public async Task UnregisterAgent_WhenAgentHasNoMessages_RemovesIt()
+    {
+        var store=CreateStore(); await store.InitializeAsync();
+        await store.RegisterAgentAsync("stale","test");
+
+        Assert.True(await store.UnregisterAgentAsync("stale"));
+        Assert.Empty(await store.ListAgentsAsync());
+    }
+
+    [Fact]
+    public async Task UnregisterAgent_WhenAgentDoesNotExist_ReturnsFalse()
+    {
+        var store=CreateStore(); await store.InitializeAsync();
+
+        Assert.False(await store.UnregisterAgentAsync("missing"));
+    }
+
+    [Fact]
+    public async Task UnregisterAgent_WhenAgentIsReferencedByMessages_Throws()
+    {
+        var store=CreateStore(); await store.InitializeAsync();
+        await store.RegisterAgentAsync("a","test"); await store.RegisterAgentAsync("b","test");
+        await store.SendMessageAsync(new("a",["b"],"hello","t"));
+
+        await Assert.ThrowsAnyAsync<Exception>(()=>store.UnregisterAgentAsync("a"));
+        Assert.Contains(await store.ListAgentsAsync(), agent=>agent.AgentId=="a");
+    }
+
     public void Dispose() { if(Directory.Exists(_directory)) Directory.Delete(_directory,true); }
 }
