@@ -8,6 +8,7 @@ public sealed class MainForm : Form
 {
     private readonly TextBox _databasePath = new() { Dock = DockStyle.Fill };
     private readonly ComboBox _statusFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
+    private readonly ComboBox _typeFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130 };
     private readonly ComboBox _agentFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     private readonly TextBox _searchText = new() { Width = 220, PlaceholderText = "本文・thread・message ID" };
     private readonly NumericUpDown _limit = new() { Minimum = 1, Maximum = 5000, Value = 500, Width = 75 };
@@ -48,6 +49,8 @@ public sealed class MainForm : Form
         _databasePath.Text = databasePath ?? ResolveDefaultDatabasePath();
         _statusFilter.Items.AddRange(["すべて", "pending", "leased", "acked"]);
         _statusFilter.SelectedIndex = 0;
+        _typeFilter.Items.AddRange(["すべて", "message", "notification", "system", "change_request"]);
+        _typeFilter.SelectedIndex = 0;
         _agentFilter.Items.Add("すべて");
         _agentFilter.SelectedIndex = 0;
         ConfigureGrid();
@@ -87,7 +90,7 @@ public sealed class MainForm : Form
 
         var filters = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new(8, 2, 8, 6), WrapContents = true };
         filters.Controls.AddRange([
-            LabelFor("状態"), _statusFilter, LabelFor("Agent"), _agentFilter,
+            LabelFor("状態"), _statusFilter, LabelFor("種別"), _typeFilter, LabelFor("Agent"), _agentFilter,
             LabelFor("検索"), _searchText, LabelFor("最大件数"), _limit,
             _autoRefresh, LabelFor("間隔(秒)"), _interval, _summary, _state
         ]);
@@ -144,7 +147,7 @@ public sealed class MainForm : Form
             var monitor = new SqliteMessageMonitor(_databasePath.Text.Trim());
             var query = new MessageMonitorQuery(
                 SelectedValue(_statusFilter), SelectedValue(_agentFilter),
-                _searchText.Text, decimal.ToInt32(_limit.Value));
+                _searchText.Text, SelectedValue(_typeFilter), decimal.ToInt32(_limit.Value));
             var snapshot = await monitor.LoadAsync(query);
             var currentAgent = _agentFilter.SelectedItem?.ToString();
             _agentFilter.BeginUpdate();

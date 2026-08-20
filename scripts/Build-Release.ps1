@@ -66,9 +66,21 @@ Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Viewer
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.StopCodex\Itoguruma.StopCodex.csproj")) + $publishArguments + @("-o", $stopCodexRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.StopClaude\Itoguruma.StopClaude.csproj")) + $publishArguments + @("-o", $stopClaudeRoot))
 
-Copy-Item -LiteralPath (Join-Path $repoRoot "README.md") -Destination $payloadRoot
-Copy-Item -LiteralPath (Join-Path $repoRoot "COMMANDS.md") -Destination $payloadRoot
-Copy-Item -LiteralPath (Join-Path $repoRoot "HOOKS.md") -Destination $payloadRoot
+$documentFiles = @(
+    "README.md",
+    "README.ja.md",
+    "COMMANDS.md",
+    "COMMANDS.ja.md",
+    "CONFIG.md",
+    "CONFIG.ja.md",
+    "MCP_SETUP.md",
+    "MCP_SETUP.ja.md",
+    "PACKAGES.md",
+    "SECURITY.md"
+)
+foreach ($documentFile in $documentFiles) {
+    Copy-Item -LiteralPath (Join-Path $repoRoot $documentFile) -Destination $payloadRoot
+}
 $examplesRoot = Join-Path $payloadRoot "examples"
 New-Item -ItemType Directory -Force -Path $examplesRoot | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot ".claude\settings.example.json") -Destination (Join-Path $examplesRoot "claude-settings.json")

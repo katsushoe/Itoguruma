@@ -56,7 +56,10 @@ using var databaseInstance = new Mutex(
 if (!databaseCreatedNew) return 1;
 
 builder.WebHost.UseUrls(serverUrl);
-var messagingService = new MessagingService(new SqliteMessageStore(databasePath));
+var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT")
+    ?? builder.Configuration["Itoguruma:CrRoot"];
+var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
+var messagingService = new MessagingService(new SqliteMessageStore(databasePath), changeRequestValidator);
 await messagingService.InitializeAsync();
 builder.Services.AddSingleton(messagingService);
 builder.Services
