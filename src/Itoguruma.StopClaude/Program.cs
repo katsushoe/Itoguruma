@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Itoguruma.Core;
 
 namespace Itoguruma.StopClaude;
 
@@ -8,9 +9,10 @@ internal static class Program
 
     public static int Main(string[] args)
     {
+        AppLocalization.ConfigureFromEnvironment();
         if (args.Length > 1 || (args.Length == 1 && !string.Equals(args[0], ListOption, StringComparison.OrdinalIgnoreCase)))
         {
-            Console.Error.WriteLine("Usage: stop-claude [--list]");
+            Console.Error.WriteLine(L("Usage: stop-claude [--list]", "使用方法: stop-claude [--list]"));
             return 2;
         }
 
@@ -22,7 +24,7 @@ internal static class Program
 
         if (targets.Length == 0)
         {
-            Console.WriteLine("No Claude-related processes were found.");
+            Console.WriteLine(L("No Claude-related processes were found.", "Claude関連のプロセスは見つかりませんでした。"));
             return 0;
         }
 
@@ -33,7 +35,7 @@ internal static class Program
 
         if (listOnly)
         {
-            Console.WriteLine($"Found {targets.Length} process(es). No processes were stopped.");
+            Console.WriteLine(L($"Found {targets.Length} process(es). No processes were stopped.", $"{targets.Length}件のプロセスが見つかりました。停止はしていません。"));
             return 0;
         }
 
@@ -52,11 +54,13 @@ internal static class Program
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
             {
                 failureCount++;
-                Console.Error.WriteLine($"Could not stop PID {target.ProcessId}: {ex.Message}");
+                Console.Error.WriteLine(L($"Could not stop PID {target.ProcessId}: {ex.Message}", $"PID {target.ProcessId}を停止できませんでした: {ex.Message}"));
             }
         }
 
-        Console.WriteLine($"Stopped {targets.Length - failureCount} process(es). Failed: {failureCount}.");
+        Console.WriteLine(L($"Stopped {targets.Length - failureCount} process(es). Failed: {failureCount}.", $"{targets.Length - failureCount}件を停止しました。失敗: {failureCount}件。"));
         return failureCount == 0 ? 0 : 1;
     }
+
+    private static string L(string english, string japanese) => AppLocalization.Text(english, japanese);
 }

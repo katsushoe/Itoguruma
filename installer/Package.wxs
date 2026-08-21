@@ -1,0 +1,71 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="Itoguruma" Manufacturer="sazysoft" Version="$(var.ProductVersion)"
+           UpgradeCode="7B549A85-8D3B-45C5-BD34-7443BC021017" Scope="perUser" Language="1033" Codepage="65001">
+    <SummaryInformation Description="Itoguruma installer" Manufacturer="sazysoft" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Itoguruma is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ITOGURUMA_LANGUAGE" Value="en" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+        <Directory Id="INSTALLFOLDER" Name="Itoguruma Installer">
+          <Component Id="InstallerPayload" Guid="A98DC527-FEC4-488E-821F-C249FB16B3DE">
+            <File Id="InstallerScript" Source="$(var.InstallerScript)" />
+            <File Id="UninstallerScript" Source="$(var.UninstallerScript)" />
+            <File Id="MsiInstallCommand" Source="$(var.MsiInstallCommand)" />
+            <File Id="MsiUninstallCommand" Source="$(var.MsiUninstallCommand)" />
+            <File Id="ReleaseArchive" Source="$(var.ReleaseArchive)" />
+            <RegistryValue Root="HKCU" Key="Software\sazysoft\ItogurumaInstaller" Name="Installed"
+                           Type="integer" Value="1" KeyPath="yes" />
+            <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+          </Component>
+        </Directory>
+    </StandardDirectory>
+
+    <Feature Id="ProductFeature" Title="Itoguruma" Level="1">
+      <ComponentRef Id="InstallerPayload" />
+    </Feature>
+
+    <SetProperty Id="InstallApplication"
+                 Value='&quot;[System64Folder]cmd.exe&quot; /d /c call &quot;[INSTALLFOLDER]Install-Itoguruma-Msi.cmd&quot; &quot;[INSTALLFOLDER]Install-Itoguruma.ps1&quot; &quot;[#ReleaseArchive]&quot; &quot;[ITOGURUMA_LANGUAGE]&quot;'
+                 Before="InstallApplication" Sequence="execute" />
+    <CustomAction Id="InstallApplication" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+                  Execute="deferred" Return="check" Impersonate="yes" />
+    <SetProperty Id="UninstallApplication"
+                 Value='&quot;[System64Folder]cmd.exe&quot; /d /c call &quot;[INSTALLFOLDER]Uninstall-Itoguruma-Msi.cmd&quot; &quot;[INSTALLFOLDER]Uninstall-Itoguruma.ps1&quot;'
+                 Before="UninstallApplication" Sequence="execute" />
+    <CustomAction Id="UninstallApplication" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+                  Execute="deferred" Return="check" Impersonate="yes" />
+
+    <InstallExecuteSequence>
+      <Custom Action="InstallApplication" After="InstallFiles" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
+      <Custom Action="UninstallApplication" Before="RemoveFiles" Condition='REMOVE="ALL" AND NOT WIX_UPGRADE_DETECTED' />
+    </InstallExecuteSequence>
+
+    <UI>
+      <Dialog Id="LanguageDialog" Width="370" Height="220" Title="Itoguruma Setup / セットアップ">
+        <Control Id="Title" Type="Text" X="20" Y="20" Width="330" Height="30"
+                 Text="{\WixUI_Font_Title}Language / 言語" />
+        <Control Id="Description" Type="Text" X="20" Y="58" Width="330" Height="25"
+                 Text="Select the application language. / アプリケーションの言語を選択してください。" />
+        <Control Id="Language" Type="RadioButtonGroup" X="35" Y="90" Width="290" Height="55" Property="ITOGURUMA_LANGUAGE">
+          <RadioButtonGroup Property="ITOGURUMA_LANGUAGE">
+            <RadioButton Value="en" X="0" Y="0" Width="250" Height="18" Text="English" />
+            <RadioButton Value="ja" X="0" Y="25" Width="250" Height="18" Text="日本語" />
+          </RadioButtonGroup>
+        </Control>
+        <Control Id="Install" Type="PushButton" X="220" Y="175" Width="65" Height="20" Default="yes" Text="Install">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="295" Y="175" Width="55" Height="20" Cancel="yes" Text="Cancel">
+          <Publish Event="EndDialog" Value="Exit" />
+        </Control>
+      </Dialog>
+      <InstallUISequence>
+        <Show Dialog="LanguageDialog" Before="ExecuteAction" Condition="NOT Installed" />
+      </InstallUISequence>
+    </UI>
+    <ui:WixUI Id="WixUI_Minimal" />
+  </Package>
+</Wix>

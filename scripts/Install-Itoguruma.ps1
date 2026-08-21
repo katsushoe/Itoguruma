@@ -1,10 +1,12 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Version = "latest",
     [string]$PackagePath = "",
     [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA "Programs\Itoguruma"),
     [string]$ConfigDirectory = "",
     [string]$LogDirectory = "",
+    [ValidateSet("", "en", "ja")]
+    [string]$Language = "",
     [string]$ServerUrl = "http://127.0.0.1:47631",
     [switch]$NoPath,
     [switch]$SkipCodex,
@@ -12,6 +14,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($Language)) {
+    Write-Host "Select language / 言語を選択してください:"
+    Write-Host "  1. English"
+    Write-Host "  2. 日本語"
+    $languageSelection = Read-Host "Language [1/2]"
+    $Language = if ($languageSelection -eq "2") { "ja" } else { "en" }
+}
+function Get-LocalizedText {
+    param([string]$English, [string]$Japanese)
+    if ($Language -eq "ja") { return $Japanese }
+    return $English
+}
 $repository = "katsushoe/Itoguruma"
 $destinationRoot = [System.IO.Path]::GetFullPath($InstallDirectory)
 $configRoot = if ([string]::IsNullOrWhiteSpace($ConfigDirectory)) {
@@ -118,8 +132,15 @@ try {
         "examples\claude-settings.json",
         "examples\codex-hooks.json",
         "README.md",
+        "README.ja.md",
         "COMMANDS.md",
-        "HOOKS.md"
+        "COMMANDS.ja.md",
+        "CONFIG.md",
+        "CONFIG.ja.md",
+        "MCP_SETUP.md",
+        "MCP_SETUP.ja.md",
+        "PACKAGES.md",
+        "SECURITY.md"
     )
     foreach ($relativePath in $requiredFiles) {
         if (!(Test-Path -LiteralPath (Join-Path $extractRoot $relativePath) -PathType Leaf)) {
@@ -166,6 +187,11 @@ try {
     Copy-Item -LiteralPath (Join-Path $destinationRoot "bin\server\appsettings.json") `
         -Destination (Join-Path $configRoot "appsettings.json") -Force
     Remove-Item -LiteralPath (Join-Path $destinationRoot "bin\server\appsettings.json") -Force
+    $settingsPath = Join-Path $configRoot "appsettings.json"
+    $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+    $settings.Itoguruma.Language = $Language
+    $settingsJson = $settings | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($settingsPath, $settingsJson, (New-Object System.Text.UTF8Encoding($false)))
     $dataRoot = Join-Path $destinationRoot "data"
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 
@@ -309,20 +335,21 @@ try {
     $task = Get-ScheduledTask -TaskName $taskName
     if ($task.State -ne "Running") { throw "ItogurumaServer scheduled task is not running." }
 
-    Write-Host "Itoguruma installed: $destinationRoot"
-    Write-Host "Configuration: $configRoot"
-    Write-Host "Logs: $logRoot"
-    Write-Host "Database: $databasePath"
-    Write-Host "MCP endpoint: $mcpUrl"
+    Write-Host ((Get-LocalizedText "Itoguruma installed" "Itogurumaをインストールしました") + ": $destinationRoot")
+    Write-Host ((Get-LocalizedText "Configuration" "設定") + ": $configRoot")
+    Write-Host ((Get-LocalizedText "Language" "言語") + ": $Language")
+    Write-Host ((Get-LocalizedText "Logs" "ログ") + ": $logRoot")
+    Write-Host ((Get-LocalizedText "Database" "データベース") + ": $databasePath")
+    Write-Host ((Get-LocalizedText "MCP endpoint" "MCPエンドポイント") + ": $mcpUrl")
     Write-Host "Claude Code Hook example: $(Join-Path $examplesRoot 'claude-settings.json')"
     Write-Host "Codex Hook example: $(Join-Path $examplesRoot 'codex-hooks.json')"
     Write-Host "Message Viewer: $(Join-Path $destinationRoot 'bin\viewer\itoguruma-viewer.exe')"
     Write-Host "Codex process stopper: $(Join-Path $stopCodexDirectory 'stop-codex.exe')"
     Write-Host "Claude process stopper: $(Join-Path $stopClaudeDirectory 'stop-claude.exe')"
     if (!$NoPath) {
-        Write-Host "Open a new terminal to use itoguruma, stop-codex, and stop-claude from PATH."
+        Write-Host (Get-LocalizedText "Open a new terminal to use itoguruma, stop-codex, and stop-claude from PATH." "PATHからitoguruma、stop-codex、stop-claudeを使用するには、新しいターミナルを開いてください。")
     }
-    Write-Host "Restart Codex and Claude Code before using the MCP server."
+    Write-Host (Get-LocalizedText "Restart Codex and Claude Code before using the MCP server." "MCPサーバーを使用する前にCodexとClaude Codeを再起動してください。")
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {

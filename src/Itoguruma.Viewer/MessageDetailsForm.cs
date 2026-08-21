@@ -17,7 +17,10 @@ public sealed partial class MessageDetailsForm : Form
         ArgumentNullException.ThrowIfNull(message);
 
         InitializeComponent();
-        Text = $"メッセージ詳細 - {message.MessageId}";
+        Text = $"{AppLocalization.Text("Message details", "メッセージ詳細")} - {message.MessageId}";
+        itemColumn.HeaderText = AppLocalization.Text("Item", "項目");
+        valueColumn.HeaderText = AppLocalization.Text("Value", "値");
+        closeButton.Text = AppLocalization.Text("Close", "閉じる");
         AddRow("Message ID", message.MessageId);
         AddRow("Thread ID", message.ThreadId);
         AddRow("From", message.SenderAgentId);

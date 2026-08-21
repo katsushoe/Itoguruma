@@ -2,10 +2,10 @@ using System.Text.Json;
 
 namespace Itoguruma.Core;
 
-public sealed class MessagingService(IMessageStore store)
+public sealed class MessagingService(IMessageStore store, ChangeRequestValidator? changeRequestValidator = null)
 {
     private static readonly HashSet<string> MessageTypes = new(StringComparer.Ordinal)
-        { "message", "notification", "system" };
+        { "message", "notification", "system", "change_request" };
 
     public Task InitializeAsync(CancellationToken cancellationToken = default) => store.InitializeAsync(cancellationToken);
 
@@ -19,20 +19,40 @@ public sealed class MessagingService(IMessageStore store)
     public Task<IReadOnlyList<Agent>> ListAgentsAsync(CancellationToken cancellationToken = default) =>
         store.ListAgentsAsync(cancellationToken);
 
-    public Task<string> SendMessageAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
+    public Task<bool> UnregisterAgentAsync(string agentId, CancellationToken cancellationToken = default) =>
+        store.UnregisterAgentAsync(agentId, cancellationToken);
+
+    public async Task<string> SendMessageAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
     {
         if (!MessageTypes.Contains(request.MessageType))
             throw new ArgumentException($"Unsupported message type: {request.MessageType}", nameof(request));
         ValidateJson(request.PayloadJson, nameof(request.PayloadJson));
-        return store.SendMessageAsync(request, cancellationToken);
+        if (request.MessageType == "change_request")
+        {
+            if (changeRequestValidator is null)
+                throw new ArgumentException("change_request delivery is not configured.", nameof(request));
+            await changeRequestValidator.InspectAsync(request.PayloadJson, cancellationToken: cancellationToken);
+        }
+        return await store.SendMessageAsync(request, cancellationToken);
     }
 
     public Task<IReadOnlyList<Message>> GetMessagesAsync(string agentId, int limit = 50,
-        TimeSpan? leaseDuration = null, string? threadId = null, CancellationToken cancellationToken = default) =>
-        store.GetMessagesAsync(agentId, limit, leaseDuration, threadId, cancellationToken);
+        TimeSpan? leaseDuration = null, string? threadId = null, string? messageType = null,
+        CancellationToken cancellationToken = default) =>
+        store.GetMessagesAsync(agentId, limit, leaseDuration, threadId, messageType, cancellationToken);
+
+    /// <summary>保存済みpayloadとCRファイルの現在状態を再検証します。</summary>
+    public Task<ChangeRequestInspection> InspectChangeRequestAsync(string? payloadJson,
+        CancellationToken cancellationToken = default) =>
+        changeRequestValidator?.InspectAsync(payloadJson, requireStatusMatch: false, cancellationToken)
+        ?? throw new InvalidOperationException("change_request delivery is not configured.");
 
     public Task<bool> AckMessageAsync(string agentId, string messageId, CancellationToken cancellationToken = default) =>
         store.AckMessageAsync(agentId, messageId, cancellationToken);
+
+    public Task<IReadOnlyList<ConversationMessage>> GetConversationHistoryAsync(string threadId, int limit = 100,
+        int offset = 0, CancellationToken cancellationToken = default) =>
+        store.GetConversationHistoryAsync(threadId, limit, offset, cancellationToken);
 
     private static void ValidateJson(string? value, string name)
     {
