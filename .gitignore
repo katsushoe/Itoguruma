@@ -7,3 +7,4 @@ obj/
 artifacts/
 release/
 data/
+.claude/settings.local.json
