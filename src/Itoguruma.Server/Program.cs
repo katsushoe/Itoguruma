@@ -4,6 +4,8 @@ using Itoguruma.Core;
 using Itoguruma.Server;
 using ModelContextProtocol.Server;
 
+AppLocalization.ConfigureFromEnvironment();
+
 var configDirectory = Environment.GetEnvironmentVariable("ITOGURUMA_CONFIG_DIR")
     ?? AppContext.BaseDirectory;
 var logDirectory = Environment.GetEnvironmentVariable("ITOGURUMA_LOG_DIR")
@@ -56,7 +58,10 @@ using var databaseInstance = new Mutex(
 if (!databaseCreatedNew) return 1;
 
 builder.WebHost.UseUrls(serverUrl);
-var messagingService = new MessagingService(new SqliteMessageStore(databasePath));
+var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT")
+    ?? builder.Configuration["Itoguruma:CrRoot"];
+var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
+var messagingService = new MessagingService(new SqliteMessageStore(databasePath), changeRequestValidator);
 await messagingService.InitializeAsync();
 builder.Services.AddSingleton(messagingService);
 builder.Services
@@ -68,7 +73,7 @@ builder.Services
     .WithTools<ItogurumaTools>();
 
 var app = builder.Build();
-app.Logger.LogInformation("[Startup] Itoguruma server starting at {ServerUrl}", serverUrl);
+app.Logger.LogInformation(AppLocalization.Text("[Startup] Itoguruma server starting at {ServerUrl}", "[起動] Itogurumaサーバーを開始します: {ServerUrl}"), serverUrl);
 app.Use(async (context, next) =>
 {
     if (!context.Request.Path.StartsWithSegments("/mcp"))

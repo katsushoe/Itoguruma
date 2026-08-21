@@ -42,7 +42,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(5, result.Output.Count);
         Assert.All(result.Output, response => Assert.False(response.RootElement.TryGetProperty("error", out _)));
-        Assert.Equal("0.3.6", result.Output[0].RootElement.GetProperty("result")
+        Assert.Equal(ProductInfo.Version, result.Output[0].RootElement.GetProperty("result")
             .GetProperty("serverInfo").GetProperty("version").GetString());
         var messages = StructuredData(result.Output[4]);
         var message = Assert.Single(messages.EnumerateArray());
@@ -57,6 +57,46 @@ public sealed class ProcessIntegrationTests : IDisposable
 
         Assert.True(StructuredData(acknowledgement.Output[0]).GetProperty("acked").GetBoolean());
         Assert.Empty(StructuredData(acknowledgement.Output[1]).EnumerateArray());
+    }
+
+    [Fact]
+    public async Task McpServer_WhenConversationHistoryIsRequested_ReturnsMessagesInChronologicalOrder()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-history.db");
+        var requests = new[]
+        {
+            ToolRequest(1, "register_agent", new { agent_id = "sender", agent_type = "test" }),
+            ToolRequest(2, "register_agent", new { agent_id = "recipient", agent_type = "test" }),
+            ToolRequest(3, "send_message", new
+            {
+                sender_agent_id = "sender", recipient = "recipient", body = "first", thread_id = "history"
+            }),
+            ToolRequest(4, "send_message", new
+            {
+                sender_agent_id = "recipient", recipient = "sender", body = "second", thread_id = "history"
+            }),
+            ToolRequest(5, "get_conversation_history", new { thread_id = "history" })
+        };
+
+        var result = await RunMcpAsync(requests, databasePath);
+
+        Assert.Equal(0, result.ExitCode);
+        var history = StructuredData(result.Output[4]).EnumerateArray().ToArray();
+        Assert.Equal(2, history.Length);
+        Assert.Equal("first", history[0].GetProperty("body").GetString());
+        Assert.Equal("second", history[1].GetProperty("body").GetString());
+    }
+
+    [Fact]
+    public async Task McpServer_WhenConversationHistoryThreadDoesNotExist_ReturnsEmptyArray()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-history-missing.db");
+
+        var result = await RunMcpAsync(
+            [ToolRequest(1, "get_conversation_history", new { thread_id = "missing-thread" })], databasePath);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Empty(StructuredData(result.Output[0]).EnumerateArray());
     }
 
     [Fact]
@@ -148,7 +188,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         var version = StructuredData(result.Output[0]);
         Assert.Equal("itoguruma", version.GetProperty("name").GetString());
-        Assert.Equal("0.3.6", version.GetProperty("version").GetString());
+        Assert.Equal(ProductInfo.Version, version.GetProperty("version").GetString());
+        Assert.Matches(@"^\d+\.\d+\.\d+(?:\.\d+)?$", version.GetProperty("version").GetString());
     }
 
     [Fact]
@@ -247,7 +288,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var result = await RunAsync("itoguruma", ["version"], Path.Combine(_directory, "version.db"), string.Empty);
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal("itoguruma 0.3.6", result.StandardOutput.Trim());
+        Assert.Equal($"itoguruma {ProductInfo.Version}", result.StandardOutput.Trim());
         Assert.False(File.Exists(Path.Combine(_directory, "version.db")));
     }
 

@@ -6,6 +6,7 @@ public sealed record MessageMonitorQuery(
     string? Status = null,
     string? AgentId = null,
     string? SearchText = null,
+    string? MessageType = null,
     int Limit = 500);
 
 public sealed record MonitoredMessage(
@@ -88,6 +89,7 @@ public sealed class SqliteMessageMonitor(string databasePath, TimeProvider? time
                 FROM messages m
                 JOIN message_deliveries d ON d.message_id = m.message_id
                 WHERE ($status IS NULL OR d.status = $status)
+                  AND ($type IS NULL OR m.message_type = $type)
                   AND ($agent IS NULL OR m.sender_agent_id = $agent OR d.recipient_agent_id = $agent)
                   AND ($search IS NULL OR m.body LIKE $pattern OR m.thread_id LIKE $pattern
                        OR m.message_id LIKE $pattern)
@@ -95,6 +97,7 @@ public sealed class SqliteMessageMonitor(string databasePath, TimeProvider? time
                 LIMIT $limit;
                 """;
             Add(command, "$status", EmptyToNull(query.Status));
+            Add(command, "$type", EmptyToNull(query.MessageType));
             Add(command, "$agent", EmptyToNull(query.AgentId));
             var search = EmptyToNull(query.SearchText);
             Add(command, "$search", search);

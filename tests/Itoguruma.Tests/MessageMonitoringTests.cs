@@ -51,6 +51,24 @@ public sealed class MessageMonitoringTests : IDisposable
         Assert.Equal(3, snapshot.AgentIds.Count);
     }
 
+    [Fact]
+    public async Task Monitor_WhenMessageTypeIsSpecified_FiltersDeliveries()
+    {
+        var store = new SqliteMessageStore(DatabasePath);
+        await store.InitializeAsync();
+        await store.RegisterAgentAsync("sender", "test");
+        await store.RegisterAgentAsync("recipient", "test");
+        await store.SendMessageAsync(new("sender", ["recipient"], "normal", "normal"));
+        await store.SendMessageAsync(new("sender", ["recipient"], "cr", "cr",
+            MessageType: "change_request", PayloadJson: "{}"));
+
+        var monitor = new SqliteMessageMonitor(DatabasePath);
+        var snapshot = await monitor.LoadAsync(new(MessageType: "change_request"));
+
+        var message = Assert.Single(snapshot.Messages);
+        Assert.Equal("change_request", message.MessageType);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, true);

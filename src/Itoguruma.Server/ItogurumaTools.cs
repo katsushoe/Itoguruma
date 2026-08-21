@@ -21,6 +21,7 @@ public sealed class ItogurumaTools(MessagingService service)
         |---|---|---|
         | `sqlite/table/write/reference_key` | A sender, recipient, or reply target does not exist. | Register missing agents or correct the reply target, then retry with the same `idempotency_key`. |
         | `validation/argument` | A parameter value is missing or invalid (e.g. no recipient, unsupported `message_type`, malformed `payload_json`). | Fix the parameter named in the error and retry. |
+        | `validation/change_request` | A CR path, payload field, canonical file field, or status is invalid or inconsistent. | Correct the CR payload or canonical file; do not fall back to a normal message. |
         | `internal` | The operation failed for an unclassified internal reason. | Inspect the error content before retrying. |
         """;
 
@@ -43,6 +44,27 @@ public sealed class ItogurumaTools(MessagingService service)
     [Description("List registered agents.")]
     public async Task<ToolData<IReadOnlyList<Agent>>> ListAgents(CancellationToken cancellationToken = default) =>
         new(await service.ListAgentsAsync(cancellationToken));
+
+    /// <summary>エージェント登録を削除します。</summary>
+    [McpServerTool(Name = "unregister_agent", UseStructuredContent = true)]
+    [Description("Remove an agent registration. Fails if the agent is referenced by existing messages or deliveries.")]
+    public async Task<CallToolResult> UnregisterAgent(string agent_id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var unregistered = await service.UnregisterAgentAsync(agent_id, cancellationToken);
+            return CreateResult(new UnregisterResult(unregistered));
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return CreateResult(new ToolError(
+                "agent_referenced",
+                "sqlite/table/write/reference_key",
+                "Itoguruma rejected the removal because this agent is referenced by existing messages or deliveries.",
+                "This agent has message history and cannot be removed without deleting that history first.",
+                false), isError: true);
+        }
+    }
 
     /// <summary>メッセージを冪等に送信します。</summary>
     [McpServerTool(Name = "send_message", Idempotent = true, UseStructuredContent = true,
@@ -75,23 +97,56 @@ public sealed class ItogurumaTools(MessagingService service)
         }
         catch (ArgumentException exception)
         {
+            var isChangeRequest = string.Equals(message_type, "change_request", StringComparison.Ordinal);
             return CreateResult(new ToolError(
-                "invalid_argument",
-                "validation/argument",
+                isChangeRequest ? "invalid_change_request" : "invalid_argument",
+                isChangeRequest ? "validation/change_request" : "validation/argument",
                 exception.Message,
-                "Fix the invalid parameter and retry.",
+                isChangeRequest
+                    ? "Correct the CR payload or canonical file; do not fall back to a normal message."
+                    : "Fix the invalid parameter and retry.",
                 true), isError: true);
         }
     }
 
     /// <summary>対象エージェントの保留メッセージをリースします。</summary>
     [McpServerTool(Name = "get_messages", UseStructuredContent = true)]
-    [Description("Lease pending messages for an agent.")]
+    [Description("Lease pending messages for an agent, optionally filtered by message_type.")]
     public async Task<ToolData<IReadOnlyList<Message>>> GetMessages(string agent_id, int limit = 50,
-        int lease_seconds = 300, string? thread_id = null,
+        int lease_seconds = 300, string? thread_id = null, string? message_type = null,
         CancellationToken cancellationToken = default) =>
         new(await service.GetMessagesAsync(
-            agent_id, limit, TimeSpan.FromSeconds(lease_seconds), thread_id, cancellationToken));
+            agent_id, limit, TimeSpan.FromSeconds(lease_seconds), thread_id, message_type, cancellationToken));
+
+    /// <summary>CRファイルの現在状態と保存済みpayloadの整合性を検査します。</summary>
+    [McpServerTool(Name = "inspect_change_request", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Validate a change_request payload against its canonical CR file and report status drift.")]
+    public async Task<CallToolResult> InspectChangeRequest(string payload_json,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return CreateResult(await service.InspectChangeRequestAsync(payload_json, cancellationToken));
+        }
+        catch (ArgumentException exception)
+        {
+            return CreateResult(new ToolError(
+                "invalid_change_request",
+                "validation/change_request",
+                exception.Message,
+                "Correct the CR payload or canonical CR file and retry.",
+                true), isError: true);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return CreateResult(new ToolError(
+                "change_request_not_configured",
+                "configuration/change_request",
+                exception.Message,
+                "Configure Itoguruma:CrRoot or ITOGURUMA_CR_ROOT and restart the server.",
+                true), isError: true);
+        }
+    }
 
     /// <summary>リース済みメッセージを確認済みにします。</summary>
     [McpServerTool(Name = "ack_message", Idempotent = true, UseStructuredContent = true)]
@@ -99,6 +154,15 @@ public sealed class ItogurumaTools(MessagingService service)
     public async Task<ToolData<AcknowledgementResult>> AckMessage(string agent_id, string message_id,
         CancellationToken cancellationToken = default) =>
         new(new(await service.AckMessageAsync(agent_id, message_id, cancellationToken)));
+
+    /// <summary>指定Threadの既読・過去分を含む履歴を時系列で返します。</summary>
+    [McpServerTool(Name = "get_conversation_history", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Return the full message history for a thread_id (conversation id), oldest first, " +
+        "including already-acked messages. Returns an empty array for a thread_id with no messages, " +
+        "including one that does not exist. Use limit and offset to page through long threads.")]
+    public async Task<ToolData<IReadOnlyList<ConversationMessage>>> GetConversationHistory(string thread_id,
+        int limit = 100, int offset = 0, CancellationToken cancellationToken = default) =>
+        new(await service.GetConversationHistoryAsync(thread_id, limit, offset, cancellationToken));
 
     private static CallToolResult CreateResult<T>(T data, bool isError = false)
     {
@@ -123,6 +187,9 @@ public sealed record MessageSentResult(string MessageId);
 
 /// <summary>メッセージ確認結果です。</summary>
 public sealed record AcknowledgementResult(bool Acked);
+
+/// <summary>エージェント削除結果です。</summary>
+public sealed record UnregisterResult(bool Unregistered);
 
 /// <summary>AIが回復方法を判断できるツールエラーです。</summary>
 public sealed record ToolError(

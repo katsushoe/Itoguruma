@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Itoguruma.Core;
 
 namespace Itoguruma.Cli;
 
@@ -27,26 +28,26 @@ public sealed class AuthCommand(
         {
             "status" => Status(),
             "rotate" => Rotate(),
-            _ => throw new ArgumentException($"Unknown auth command: {arguments[0]}")
+            _ => throw new ArgumentException(AppLocalization.Text($"Unknown auth command: {arguments[0]}", $"不明な認証コマンドです: {arguments[0]}"))
         };
     }
 
     private int Status()
     {
         output.WriteLine(tokenStore.IsConfigured
-            ? "Authentication token: configured."
-            : "Authentication token: not configured.");
+            ? AppLocalization.Text("Authentication token: configured.", "認証トークン: 設定済みです。")
+            : AppLocalization.Text("Authentication token: not configured.", "認証トークン: 未設定です。"));
         return 0;
     }
 
     private int Rotate()
     {
-        output.WriteLine("WARNING: Rotating the authentication token immediately invalidates the current token.");
-        output.WriteLine("The server, Codex, Claude Code, and Hataori must be restarted or reconfigured.");
-        output.Write($"Type {Confirmation} to continue: ");
+        output.WriteLine(AppLocalization.Text("WARNING: Rotating the authentication token immediately invalidates the current token.", "警告: 認証トークンを更新すると、現在のトークンは直ちに無効になります。"));
+        output.WriteLine(AppLocalization.Text("The server, Codex, Claude Code, and Hataori must be restarted or reconfigured.", "サーバー、Codex、Claude Code、Hataoriの再起動または再設定が必要です。"));
+        output.Write(AppLocalization.Text($"Type {Confirmation} to continue: ", $"続行するには{Confirmation}と入力してください: "));
         if (!string.Equals(input.ReadLine(), Confirmation, StringComparison.Ordinal))
         {
-            output.WriteLine("Token rotation cancelled.");
+            output.WriteLine(AppLocalization.Text("Token rotation cancelled.", "トークンの更新を中止しました。"));
             return 1;
         }
 
@@ -62,7 +63,7 @@ public sealed class AuthCommand(
         }
         catch (Exception ex)
         {
-            error.WriteLine($"Token rotation failed: {ex.Message}");
+            error.WriteLine(AppLocalization.Text($"Token rotation failed: {ex.Message}", $"トークンの更新に失敗しました: {ex.Message}"));
             return 2;
         }
         finally
@@ -70,7 +71,7 @@ public sealed class AuthCommand(
             CryptographicOperations.ZeroMemory(token);
         }
 
-        output.WriteLine("Authentication token rotated. The token value is not displayed.");
+        output.WriteLine(AppLocalization.Text("Authentication token rotated. The token value is not displayed.", "認証トークンを更新しました。トークン値は表示しません。"));
         output.WriteLine("Next: restart the ItogurumaServer scheduled task, open a new terminal, and restart Codex and Claude Code.");
         output.WriteLine("Reconfigure clients that store the bearer token directly, including Claude Code and Hataori.");
         return 0;

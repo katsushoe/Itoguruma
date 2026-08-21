@@ -40,7 +40,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
               message_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL,
               sender_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
               reply_to_message_id TEXT NULL REFERENCES messages(message_id),
-              message_type TEXT NOT NULL CHECK(message_type IN ('message','notification','system')),
+              message_type TEXT NOT NULL CHECK(message_type IN ('message','notification','system','change_request')),
               body TEXT NOT NULL, payload_json TEXT NULL, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS message_deliveries (
               message_id TEXT NOT NULL REFERENCES messages(message_id),
@@ -58,6 +58,34 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             CREATE UNIQUE INDEX IF NOT EXISTS ux_messages_sender_idempotency
               ON messages(sender_agent_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
             PRAGMA user_version=2;
+            """, cancellationToken);
+            if (version < 3) await ApplyAsync(connection, (SqliteTransaction)transaction, """
+            CREATE TABLE messages_v3 (
+              message_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL,
+              sender_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+              reply_to_message_id TEXT NULL REFERENCES messages_v3(message_id),
+              message_type TEXT NOT NULL CHECK(message_type IN ('message','notification','system','change_request')),
+              body TEXT NOT NULL, payload_json TEXT NULL, created_at TEXT NOT NULL,
+              idempotency_key TEXT NULL);
+            INSERT INTO messages_v3 SELECT message_id,thread_id,sender_agent_id,reply_to_message_id,
+              message_type,body,payload_json,created_at,idempotency_key FROM messages;
+            CREATE TABLE message_deliveries_v3 (
+              message_id TEXT NOT NULL REFERENCES messages_v3(message_id),
+              recipient_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+              status TEXT NOT NULL CHECK(status IN ('pending','leased','acked')),
+              lease_until TEXT NULL, delivered_at TEXT NULL, acked_at TEXT NULL,
+              PRIMARY KEY(message_id, recipient_agent_id));
+            INSERT INTO message_deliveries_v3 SELECT message_id,recipient_agent_id,status,
+              lease_until,delivered_at,acked_at FROM message_deliveries;
+            DROP TABLE message_deliveries;
+            DROP TABLE messages;
+            ALTER TABLE messages_v3 RENAME TO messages;
+            ALTER TABLE message_deliveries_v3 RENAME TO message_deliveries;
+            CREATE INDEX ix_deliveries_inbox ON message_deliveries(recipient_agent_id,status,lease_until);
+            CREATE INDEX ix_messages_thread ON messages(thread_id,created_at);
+            CREATE UNIQUE INDEX ux_messages_sender_idempotency
+              ON messages(sender_agent_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
+            PRAGMA user_version=3;
             """, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
@@ -105,6 +133,16 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
                 reader.IsDBNull(3) ? null : reader.GetString(3), Parse(reader.GetString(4)),
                 Parse(reader.GetString(5)), reader.IsDBNull(6) ? null : reader.GetString(6)));
         return agents;
+    }
+
+    public async Task<bool> UnregisterAgentAsync(string agentId, CancellationToken cancellationToken = default)
+    {
+        RequireText(agentId, nameof(agentId));
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM agents WHERE agent_id=$id;";
+        Add(command, "$id", agentId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     public async Task<string> SendMessageAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
@@ -169,7 +207,8 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     }
 
     public async Task<IReadOnlyList<Message>> GetMessagesAsync(string agentId, int limit = 50,
-        TimeSpan? leaseDuration = null, string? threadId = null, CancellationToken cancellationToken = default)
+        TimeSpan? leaseDuration = null, string? threadId = null, string? messageType = null,
+        CancellationToken cancellationToken = default)
     {
         RequireText(agentId, nameof(agentId));
         if (limit is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(limit));
@@ -183,11 +222,13 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             UPDATE message_deliveries SET status='leased', lease_until=$lease, delivered_at=COALESCE(delivered_at,$now)
             WHERE rowid IN (SELECT d.rowid FROM message_deliveries d JOIN messages m ON m.message_id=d.message_id
               WHERE d.recipient_agent_id=$agent AND (d.status='pending' OR (d.status='leased' AND d.lease_until <= $now))
-              AND ($thread IS NULL OR m.thread_id=$thread) ORDER BY m.created_at LIMIT $limit)
+              AND ($thread IS NULL OR m.thread_id=$thread)
+              AND ($type IS NULL OR m.message_type=$type) ORDER BY m.created_at LIMIT $limit)
             RETURNING message_id;
             """;
         Add(command, "$lease", Format(leaseUntil)); Add(command, "$now", Format(now));
         Add(command, "$agent", agentId); Add(command, "$thread", threadId); Add(command, "$limit", limit);
+        Add(command, "$type", messageType);
         var ids = new List<string>();
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
             while (await reader.ReadAsync(cancellationToken)) ids.Add(reader.GetString(0));
@@ -206,6 +247,28 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         }
         await transaction.CommitAsync(cancellationToken);
         return messages.OrderBy(x => x.CreatedAt).ToArray();
+    }
+
+    public async Task<IReadOnlyList<ConversationMessage>> GetConversationHistoryAsync(string threadId, int limit = 100,
+        int offset = 0, CancellationToken cancellationToken = default)
+    {
+        RequireText(threadId, nameof(threadId));
+        if (limit is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(limit));
+        if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
+        var history = new List<ConversationMessage>();
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT message_id,thread_id,sender_agent_id,reply_to_message_id,message_type,body,payload_json,created_at
+            FROM messages WHERE thread_id=$thread ORDER BY created_at ASC LIMIT $limit OFFSET $offset;
+            """;
+        Add(command, "$thread", threadId); Add(command, "$limit", limit); Add(command, "$offset", offset);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            history.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetString(4), reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6), Parse(reader.GetString(7))));
+        return history;
     }
 
     public async Task<bool> AckMessageAsync(string agentId, string messageId, CancellationToken cancellationToken = default)

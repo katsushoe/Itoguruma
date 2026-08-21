@@ -9,6 +9,7 @@
     <PublishSingleFile>true</PublishSingleFile>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Itoguruma.Core/Itoguruma.Core.csproj" />
     <InternalsVisibleTo Include="Itoguruma.Tests" />
   </ItemGroup>
 </Project>

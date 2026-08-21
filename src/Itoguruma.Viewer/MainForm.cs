@@ -8,10 +8,11 @@ public sealed class MainForm : Form
 {
     private readonly TextBox _databasePath = new() { Dock = DockStyle.Fill };
     private readonly ComboBox _statusFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
+    private readonly ComboBox _typeFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130 };
     private readonly ComboBox _agentFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
-    private readonly TextBox _searchText = new() { Width = 220, PlaceholderText = "本文・thread・message ID" };
+    private readonly TextBox _searchText = new() { Width = 220 };
     private readonly NumericUpDown _limit = new() { Minimum = 1, Maximum = 5000, Value = 500, Width = 75 };
-    private readonly CheckBox _autoRefresh = new() { Text = "自動更新", Checked = true, AutoSize = true };
+    private readonly CheckBox _autoRefresh = new() { Checked = true, AutoSize = true };
     private readonly NumericUpDown _interval = new() { Minimum = 1, Maximum = 60, Value = 2, Width = 55 };
     private readonly Label _summary = new() { AutoSize = true, Padding = new(8, 7, 0, 0) };
     private readonly Label _state = new() { AutoSize = true, ForeColor = Color.DimGray, Padding = new(8, 7, 0, 0) };
@@ -46,9 +47,13 @@ public sealed class MainForm : Form
         MinimumSize = new(900, 560);
         StartPosition = FormStartPosition.CenterScreen;
         _databasePath.Text = databasePath ?? ResolveDefaultDatabasePath();
-        _statusFilter.Items.AddRange(["すべて", "pending", "leased", "acked"]);
+        _searchText.PlaceholderText = L("Body, thread, or message ID", "本文・thread・message ID");
+        _autoRefresh.Text = L("Auto refresh", "自動更新");
+        _statusFilter.Items.AddRange([L("All", "すべて"), "pending", "leased", "acked"]);
         _statusFilter.SelectedIndex = 0;
-        _agentFilter.Items.Add("すべて");
+        _typeFilter.Items.AddRange([L("All", "すべて"), "message", "notification", "system", "change_request"]);
+        _typeFilter.SelectedIndex = 0;
+        _agentFilter.Items.Add(L("All", "すべて"));
         _agentFilter.SelectedIndex = 0;
         ConfigureGrid();
         Controls.Add(BuildLayout());
@@ -78,18 +83,18 @@ public sealed class MainForm : Form
         database.ColumnStyles.Add(new(SizeType.AutoSize));
         database.Controls.Add(new Label { Text = "SQLite DB", AutoSize = true, Padding = new(0, 7, 8, 0) }, 0, 0);
         database.Controls.Add(_databasePath, 1, 0);
-        var browse = new Button { Text = "参照...", AutoSize = true };
+        var browse = new Button { Text = L("Browse...", "参照..."), AutoSize = true };
         browse.Click += (_, _) => BrowseDatabase();
         database.Controls.Add(browse, 2, 0);
-        var refresh = new Button { Text = "更新", AutoSize = true };
+        var refresh = new Button { Text = L("Refresh", "更新"), AutoSize = true };
         refresh.Click += async (_, _) => await RefreshAsync();
         database.Controls.Add(refresh, 3, 0);
 
         var filters = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new(8, 2, 8, 6), WrapContents = true };
         filters.Controls.AddRange([
-            LabelFor("状態"), _statusFilter, LabelFor("Agent"), _agentFilter,
-            LabelFor("検索"), _searchText, LabelFor("最大件数"), _limit,
-            _autoRefresh, LabelFor("間隔(秒)"), _interval, _summary, _state
+            LabelFor(L("Status", "状態")), _statusFilter, LabelFor(L("Type", "種別")), _typeFilter, LabelFor("Agent"), _agentFilter,
+            LabelFor(L("Search", "検索")), _searchText, LabelFor(L("Limit", "最大件数")), _limit,
+            _autoRefresh, LabelFor(L("Interval (sec)", "間隔(秒)")), _interval, _summary, _state
         ]);
 
         var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 430 };
@@ -103,13 +108,13 @@ public sealed class MainForm : Form
 
     private void ConfigureGrid()
     {
-        AddColumn("CreatedAtLocal", "日時", 145);
-        AddColumn("DeliveryStatus", "状態", 70);
-        AddColumn("SenderAgentId", "送信元", 110);
-        AddColumn("RecipientAgentId", "宛先", 110);
+        AddColumn("CreatedAtLocal", L("Date", "日時"), 145);
+        AddColumn("DeliveryStatus", L("Status", "状態"), 70);
+        AddColumn("SenderAgentId", L("From", "送信元"), 110);
+        AddColumn("RecipientAgentId", L("To", "宛先"), 110);
         AddColumn("ThreadId", "Thread", 150);
-        AddColumn("MessageType", "種別", 75);
-        AddColumn("BodyPreview", "本文", 420, DataGridViewAutoSizeColumnMode.Fill);
+        AddColumn("MessageType", L("Type", "種別"), 75);
+        AddColumn("BodyPreview", L("Body", "本文"), 420, DataGridViewAutoSizeColumnMode.Fill);
         _messages.CellFormatting += (_, e) =>
         {
             if (_messages.Columns[e.ColumnIndex].DataPropertyName != "DeliveryStatus" || e.Value is not string status) return;
@@ -138,31 +143,31 @@ public sealed class MainForm : Form
     {
         if (_refreshing) return;
         _refreshing = true;
-        _state.Text = "読込中...";
+        _state.Text = L("Loading...", "読込中...");
         try
         {
             var monitor = new SqliteMessageMonitor(_databasePath.Text.Trim());
             var query = new MessageMonitorQuery(
                 SelectedValue(_statusFilter), SelectedValue(_agentFilter),
-                _searchText.Text, decimal.ToInt32(_limit.Value));
+                _searchText.Text, SelectedValue(_typeFilter), decimal.ToInt32(_limit.Value));
             var snapshot = await monitor.LoadAsync(query);
             var currentAgent = _agentFilter.SelectedItem?.ToString();
             _agentFilter.BeginUpdate();
             _agentFilter.Items.Clear();
-            _agentFilter.Items.Add("すべて");
+            _agentFilter.Items.Add(L("All", "すべて"));
             foreach (var agent in snapshot.AgentIds) _agentFilter.Items.Add(agent);
             _agentFilter.SelectedItem = currentAgent is not null && _agentFilter.Items.Contains(currentAgent)
                 ? currentAgent
-                : "すべて";
+                : L("All", "すべて");
             _agentFilter.EndUpdate();
             _messages.DataSource = new BindingList<MessageRow>(snapshot.Messages.Select(x => new MessageRow(x)).ToList());
             _summary.Text = $"pending {snapshot.PendingCount} / leased {snapshot.LeasedCount} / acked {snapshot.AcknowledgedCount}";
-            _state.Text = $"{snapshot.Messages.Count}件  {snapshot.LoadedAt.ToLocalTime():HH:mm:ss}";
+            _state.Text = L($"{snapshot.Messages.Count} items  {snapshot.LoadedAt.ToLocalTime():HH:mm:ss}", $"{snapshot.Messages.Count}件  {snapshot.LoadedAt.ToLocalTime():HH:mm:ss}");
             ShowSelectedMessage();
         }
         catch (Exception ex)
         {
-            _state.Text = "読込失敗";
+            _state.Text = L("Load failed", "読込失敗");
             _details.Text = ex.Message;
         }
         finally
@@ -221,6 +226,7 @@ public sealed class MainForm : Form
     }
 
     private static Label LabelFor(string text) => new() { Text = text, AutoSize = true, Padding = new(6, 7, 2, 0) };
+    private static string L(string english, string japanese) => AppLocalization.Text(english, japanese);
     private static string? SelectedValue(ComboBox comboBox) =>
         comboBox.SelectedIndex <= 0 ? null : comboBox.SelectedItem?.ToString();
     private static string Local(DateTimeOffset? value) =>
