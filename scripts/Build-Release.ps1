@@ -43,6 +43,10 @@ $stopClaudeRoot = Join-Path $payloadRoot "bin\stop-claude"
 $zipPath = Join-Path $releaseRoot ("Itoguruma-" + $normalizedVersion + "-win-x64.zip")
 $installerPath = Join-Path $releaseRoot "Install-Itoguruma.ps1"
 $checksumPath = Join-Path $releaseRoot "SHA256SUMS.txt"
+$msiPath = Join-Path $releaseRoot ("Itoguruma-" + $normalizedVersion + "-win-x64.msi")
+$uninstallerPath = Join-Path $repoRoot "scripts\Uninstall-Itoguruma.ps1"
+$msiInstallCommand = Join-Path $repoRoot "scripts\Install-Itoguruma-Msi.cmd"
+$msiUninstallCommand = Join-Path $repoRoot "scripts\Uninstall-Itoguruma-Msi.cmd"
 
 if (Test-Path -LiteralPath $releaseRoot) {
     Remove-Item -LiteralPath $releaseRoot -Recurse -Force
@@ -76,7 +80,9 @@ $documentFiles = @(
     "MCP_SETUP.md",
     "MCP_SETUP.ja.md",
     "PACKAGES.md",
-    "SECURITY.md"
+    "PACKAGES.ja.md",
+    "SECURITY.md",
+    "SECURITY.ja.md"
 )
 foreach ($documentFile in $documentFiles) {
     Copy-Item -LiteralPath (Join-Path $repoRoot $documentFile) -Destination $payloadRoot
@@ -88,9 +94,25 @@ Copy-Item -LiteralPath (Join-Path $repoRoot ".codex\hooks.example.json") -Destin
 
 Compress-Archive -Path (Join-Path $payloadRoot "*") -DestinationPath $zipPath -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot "scripts\Install-Itoguruma.ps1") -Destination $installerPath
-$hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-Set-Content -LiteralPath $checksumPath -Value ("$hash  " + [System.IO.Path]::GetFileName($zipPath)) -Encoding ascii
+dotnet build (Join-Path $repoRoot "installer\Itoguruma.Installer.wixproj") `
+    -t:Rebuild `
+    -c $Configuration `
+    -p:ProductVersion=$normalizedVersion `
+    -p:InstallerScript=$installerPath `
+    -p:UninstallerScript=$uninstallerPath `
+    -p:MsiInstallCommand=$msiInstallCommand `
+    -p:MsiUninstallCommand=$msiUninstallCommand `
+    -p:ReleaseArchive=$zipPath `
+    -o $releaseRoot
+if ($LASTEXITCODE -ne 0) { throw "WiX MSI build failed with exit code $LASTEXITCODE." }
+
+$checksumLines = @($zipPath, $msiPath) | ForEach-Object {
+    $hash = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$hash  $([System.IO.Path]::GetFileName($_))"
+}
+Set-Content -LiteralPath $checksumPath -Value $checksumLines -Encoding ascii
 
 Write-Host "Binary ZIP: $zipPath"
 Write-Host "Installer: $installerPath"
+Write-Host "MSI: $msiPath"
 Write-Host "Checksums: $checksumPath"

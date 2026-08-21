@@ -6,10 +6,10 @@ Itogurumaは、Claude CodeやCodexなどの独立したAIエージェントが�
 
 ## はじめに
 
-最新Releaseをインストールし、ターミナルとAIクライアントを再起動して往復通信を確認します。
+最新ReleaseのMSIをインストールし、ターミナルとAIクライアントを再起動して往復通信を確認します。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
+msiexec /i .\Itoguruma-x.x.x-win-x64.msi
 itoguruma register --agent codex-main --type codex
 itoguruma register --agent claude-main --type claude-code
 itoguruma send --from codex-main --to claude-main --thread setup --body "Hello" --idempotency-key setup-1
@@ -18,7 +18,7 @@ itoguruma inbox --agent claude-main --lease-seconds 300
 
 ## インストール
 
-GitHub Releasesは`Install-Itoguruma.ps1`と、自己完結型の`Itoguruma-x.x.x-win-x64.zip`を提供します。どちらも.NET SDKは不要です。ソースからビルドする場合は.NET 8 SDKが必要です。
+GitHub Releasesは推奨のx64 MSI、`Install-Itoguruma.ps1`、自己完結型ZIPを提供します。MSIでは英語または日本語を選択でき、無人インストールでは`ITOGURUMA_LANGUAGE=en`または`ITOGURUMA_LANGUAGE=ja`を指定できます。インストーラに.NET SDKは不要です。ソースからビルドする場合は.NET 8 SDKが必要です。
 
 ```powershell
 dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj

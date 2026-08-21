@@ -11,6 +11,9 @@
 | `Itoguruma.Tests` | `Microsoft.NET.Test.Sdk` | `17.11.1` | テストホスト統合。 |
 | `Itoguruma.Tests` | `xunit` | `2.9.2` | テストフレームワーク。 |
 | `Itoguruma.Tests` | `xunit.runner.visualstudio` | `2.8.2` | テスト検出・実行アダプター。private assetとして参照。 |
+| `Itoguruma.Installer` | `WixToolset.Sdk` | `7.0.0` | x64 MSIのビルド。 |
+| `Itoguruma.Installer` | `WixToolset.UI.wixext` | `7.0.0` | MSIの言語選択UI。 |
+| `Itoguruma.Installer` | `WixToolset.Util.wixext` | `7.0.0` | ログ付きMSIカスタムアクション実行。 |
 
 ## パッケージソースと更新
 
