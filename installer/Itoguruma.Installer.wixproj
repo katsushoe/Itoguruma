@@ -1,0 +1,14 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>Itoguruma-$(ProductVersion)-win-x64</OutputName>
+    <DefineConstants>ProductVersion=$(ProductVersion);InstallerScript=$(InstallerScript);UninstallerScript=$(UninstallerScript);MsiInstallCommand=$(MsiInstallCommand);MsiUninstallCommand=$(MsiUninstallCommand);ReleaseArchive=$(ReleaseArchive)</DefineConstants>
+    <SuppressIces>ICE91</SuppressIces>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="7.0.0" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="7.0.0" />
+  </ItemGroup>
+</Project>

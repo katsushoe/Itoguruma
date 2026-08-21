@@ -189,7 +189,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var version = StructuredData(result.Output[0]);
         Assert.Equal("itoguruma", version.GetProperty("name").GetString());
         Assert.Equal(ProductInfo.Version, version.GetProperty("version").GetString());
-        Assert.Matches(@"^\d+\.\d+\.\d+\.\d+$", version.GetProperty("version").GetString());
+        Assert.Matches(@"^\d+\.\d+\.\d+(?:\.\d+)?$", version.GetProperty("version").GetString());
     }
 
     [Fact]

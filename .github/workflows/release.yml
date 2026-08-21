@@ -88,6 +88,7 @@ jobs:
           $assets = @(
             "release/$version/Install-Itoguruma.ps1"
             "release/$version/Itoguruma-$version-win-x64.zip"
+            "release/$version/Itoguruma-$version-win-x64.msi"
             "release/$version/SHA256SUMS.txt"
           )
           gh release view $tag 2>$null | Out-Null

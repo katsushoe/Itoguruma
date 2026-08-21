@@ -6,10 +6,10 @@ Itoguruma is a persistent MCP Streamable HTTP server that lets independent AI ag
 
 ## Getting Started
 
-Install the latest release, restart your terminal and AI clients, and verify a round trip:
+Install the latest release MSI, restart your terminal and AI clients, and verify a round trip:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1
+msiexec /i .\Itoguruma-x.x.x-win-x64.msi
 itoguruma register --agent codex-main --type codex
 itoguruma register --agent claude-main --type claude-code
 itoguruma send --from codex-main --to claude-main --thread setup --body "Hello" --idempotency-key setup-1
@@ -18,7 +18,7 @@ itoguruma inbox --agent claude-main --lease-seconds 300
 
 ## Installation
 
-GitHub Releases provide `Install-Itoguruma.ps1` and a self-contained `Itoguruma-x.x.x-win-x64.zip`. The installer requires no .NET SDK. Source builds require the .NET 8 SDK:
+GitHub Releases provide the recommended x64 MSI, `Install-Itoguruma.ps1`, and a self-contained ZIP. The MSI prompts for English or Japanese and supports silent installation with `ITOGURUMA_LANGUAGE=en` or `ITOGURUMA_LANGUAGE=ja`. Installers require no .NET SDK. Source builds require the .NET 8 SDK:
 
 ```powershell
 dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj
