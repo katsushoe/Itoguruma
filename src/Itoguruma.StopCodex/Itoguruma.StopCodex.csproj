@@ -8,4 +8,7 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Itoguruma.Core/Itoguruma.Core.csproj" />
+  </ItemGroup>
 </Project>

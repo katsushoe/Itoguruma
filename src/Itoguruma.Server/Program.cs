@@ -4,6 +4,8 @@ using Itoguruma.Core;
 using Itoguruma.Server;
 using ModelContextProtocol.Server;
 
+AppLocalization.ConfigureFromEnvironment();
+
 var configDirectory = Environment.GetEnvironmentVariable("ITOGURUMA_CONFIG_DIR")
     ?? AppContext.BaseDirectory;
 var logDirectory = Environment.GetEnvironmentVariable("ITOGURUMA_LOG_DIR")
@@ -71,7 +73,7 @@ builder.Services
     .WithTools<ItogurumaTools>();
 
 var app = builder.Build();
-app.Logger.LogInformation("[Startup] Itoguruma server starting at {ServerUrl}", serverUrl);
+app.Logger.LogInformation(AppLocalization.Text("[Startup] Itoguruma server starting at {ServerUrl}", "[起動] Itogurumaサーバーを開始します: {ServerUrl}"), serverUrl);
 app.Use(async (context, next) =>
 {
     if (!context.Request.Path.StartsWithSegments("/mcp"))
