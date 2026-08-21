@@ -2,6 +2,10 @@
 
 [English](CONFIG.md) | [日本語](CONFIG.ja.md)
 
+## 表示言語
+
+インストーラは `Itoguruma.Language` を `config/appsettings.json` に保存します。対応値は `en` と `ja` です。Viewer UI、アプリケーションログ、コンソールメッセージはこの設定を使用します。無人インストールでは `-Language en` または `-Language ja` を指定します。省略時はインストーラで言語を選択します。
+
 ## 解決順と配置
 
 環境変数は`src/Itoguruma.Server/appsettings.json`より優先されます。インストーラが生成する実行時ファイルは、別のインストール先を指定しない限り`%LOCALAPPDATA%\Programs\Itoguruma`配下に保存されます。

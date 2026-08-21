@@ -2,6 +2,10 @@
 
 [English](CONFIG.md) | [日本語](CONFIG.ja.md)
 
+## Display language
+
+The installer stores `Itoguruma.Language` in `config/appsettings.json`. Supported values are `en` and `ja`. The Viewer UI, application logs, and console messages use this setting. Run the installer with `-Language en` or `-Language ja` for unattended installation; when omitted, the installer prompts for a language.
+
 ## Resolution and locations
 
 Environment variables override `src/Itoguruma.Server/appsettings.json`. Installer-generated runtime files are stored below `%LOCALAPPDATA%\Programs\Itoguruma` unless another installation directory is selected.
