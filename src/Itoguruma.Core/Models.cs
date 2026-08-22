@@ -8,7 +8,7 @@ public sealed record Message(string MessageId, string ThreadId, string SenderAge
     DateTimeOffset CreatedAt, string DeliveryStatus, DateTimeOffset? LeaseUntil);
 
 public sealed record SendMessageRequest(string SenderAgentId, IReadOnlyList<string> Recipients,
-    string Body, string ThreadId, string? ReplyToMessageId = null,
+    string Body, string ThreadId, string Provider, string? ReplyToMessageId = null,
     string MessageType = "message", string? PayloadJson = null, string? IdempotencyKey = null);
 
 public sealed record ConversationMessage(string MessageId, string ThreadId, string SenderAgentId,

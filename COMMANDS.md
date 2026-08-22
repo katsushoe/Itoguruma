@@ -8,10 +8,10 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 | Command | Required | Optional | Result |
 | :--- | :--- | :--- | :--- |
-| `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Creates or refreshes an agent; `--type` is its provider. |
+| `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Creates or refreshes an agent. |
 | `itoguruma agents` | None | `--db` | Lists registered agents. |
 | `itoguruma unregister` | `--agent` | `--db` | Removes an unreferenced agent. |
-| `itoguruma send` | `--from`, one or more `--to`, `--body`, `--thread` | `--reply-to`, `--message-type`, `--payload-json`, `--idempotency-key`, `--db` | Persists a message and queues deliveries. |
+| `itoguruma send` | `--from`, one or more `--to`, `--provider`, `--body`, `--thread` | `--reply-to`, `--message-type`, `--payload-json`, `--idempotency-key`, `--db` | Persists a message and queues deliveries. |
 | `itoguruma inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Leases deliverable messages. |
 | `itoguruma ack` | `--agent`, `--message` | `--db` | Acknowledges a leased delivery. |
 | `itoguruma history` | `--thread` | `--limit`, `--offset`, `--db` | Returns the conversation history oldest first. |
@@ -28,7 +28,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `register_agent` | `agent_id`, `agent_type` | Creates an agent or refreshes its heartbeat. |
 | `list_agents` | None | Returns all persisted agents. |
 | `unregister_agent` | `agent_id` | Fails while messages reference the agent. |
-| `send_message` | sender, body, thread, recipient(s) | Returns the persisted message ID; duplicate sender/idempotency-key pairs return the existing logical message. |
+| `send_message` | sender, provider, body, thread, recipient(s) | Returns the persisted message ID; duplicate sender/idempotency-key pairs return the existing logical message. |
 | `get_messages` | `agent_id` | Leases matching pending or expired deliveries and returns none when no match exists. |
 | `ack_message` | `agent_id`, `message_id` | Acknowledges only the matching leased delivery. |
 | `get_conversation_history` | `thread_id` | Returns the thread oldest first, including acknowledged messages; an unknown thread returns an empty array. |
@@ -39,7 +39,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 `get_version` returns the running server name and its product version in `x.x.x` or `x.x.x.x` format.
 
-`agent_type`/`--type` is the sender provider, such as `codex` or `claude-code`. It is normalized to lowercase and must contain only ASCII letters, digits, and hyphens. Every newly accepted message stores this registered value as read-only `provider`; senders cannot supply or override it. Sending fails with `provider_not_registered` when the sender has no valid provider. Messages migrated from schema version 3 or earlier return `provider=unknown` without guessing a historical value.
+`provider`/`--provider` is required on every send and identifies the sender runtime, such as `codex` or `claude-code`. It is normalized to lowercase and must contain only ASCII letters, digits, and hyphens. Itoguruma stores the supplied value with the message and returns it through inbox leasing, redelivery, hooks, history, and Viewer. It is routing metadata supplied by an authenticated client, not proof of identity. Messages migrated from schema version 3 or earlier return `provider=unknown` without guessing a historical value.
 
 `message_type` accepts `message`, `notification`, `system`, or `change_request`. A change request requires a registered explicit recipient, a valid payload, and an existing Markdown file under `inbox/<target_project>/` in the configured CR root.
 
@@ -47,7 +47,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 ```powershell
 itoguruma register --agent codex-main --type codex
-itoguruma send --from codex-main --to claude-main --thread review --body "Review requested" --idempotency-key review-1
+itoguruma send --from codex-main --to claude-main --provider codex --thread review --body "Review requested" --idempotency-key review-1
 itoguruma inbox --agent claude-main --lease-seconds 300
 itoguruma ack --agent claude-main --message <messageId>
 ```
