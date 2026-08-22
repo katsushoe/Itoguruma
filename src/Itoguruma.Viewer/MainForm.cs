@@ -111,6 +111,7 @@ public sealed class MainForm : Form
         AddColumn("CreatedAtLocal", L("Date", "日時"), 145);
         AddColumn("DeliveryStatus", L("Status", "状態"), 70);
         AddColumn("SenderAgentId", L("From", "送信元"), 110);
+        AddColumn("Provider", "Provider", 90);
         AddColumn("RecipientAgentId", L("To", "宛先"), 110);
         AddColumn("ThreadId", "Thread", 150);
         AddColumn("MessageType", L("Type", "種別"), 75);
@@ -199,6 +200,7 @@ public sealed class MainForm : Form
             Message ID: {message.MessageId}
             Thread ID: {message.ThreadId}
             From: {message.SenderAgentId}
+            Provider: {message.Provider}
             To: {message.RecipientAgentId}
             Type: {message.MessageType}
             Status: {message.DeliveryStatus}
@@ -247,6 +249,7 @@ public sealed class MainForm : Form
         public string CreatedAtLocal => Source.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
         public string DeliveryStatus => Source.DeliveryStatus;
         public string SenderAgentId => Source.SenderAgentId;
+        public string Provider => Source.Provider;
         public string RecipientAgentId => Source.RecipientAgentId;
         public string ThreadId => Source.ThreadId;
         public string MessageType => Source.MessageType;
