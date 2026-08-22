@@ -11,10 +11,12 @@
 | `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Agentを登録またはheartbeat更新します。 |
 | `itoguruma agents` | なし | `--db` | 登録済みAgentを一覧表示します。 |
 | `itoguruma unregister` | `--agent` | `--db` | Agent登録を削除します。既存メッセージから参照されているAgentは削除できません。 |
-| `itoguruma send` | `--from`, `--to`, `--body`, `--thread` | `--reply-to`, `--message-type`, `--payload-json`, `--idempotency-key`, `--db` | メッセージを永続化して配送待ちにします。 |
+| `itoguruma send` | `--from`, 1個以上の`--to`, `--body`, `--thread` | `--reply-to`, `--message-type`, `--payload-json`, `--idempotency-key`, `--db` | メッセージを永続化して配送待ちにします。 |
 | `itoguruma inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | 未処理メッセージをleaseして取得します。 |
 | `itoguruma ack` | `--agent`, `--message` | `--db` | lease済みメッセージをACKします。 |
-| `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Claude Code／Codex Hook入力を読み、InboxをHook出力へ追加します。 |
+| `itoguruma history` | `--thread` | `--limit`, `--offset`, `--db` | 指定Threadのメッセージ履歴を作成日時の昇順で返します。 |
+| `itoguruma inspect-change-request` | `--payload-json` | `--db` | CRファイルを再検証し、記録された状態との差異を返します。 |
+| `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Claude Code／Codex Hook入力を読み、InboxをHook出力へ追加します。 |
 | `itoguruma auth status` | なし | なし | 値を表示せず、ユーザー認証トークンの設定有無を表示します。 |
 | `itoguruma auth rotate` | なし | なし | 明示確認後に32バイトの暗号学的乱数でユーザー認証トークンをローテーションします。 |
 | `itoguruma version` | なし | なし | 製品バージョンを`x.x.x`または`x.x.x.x`形式で表示します。 |
@@ -52,6 +54,9 @@ itoguruma auth rotate
 | `ack_message` | `agent_id`, `message_id` | なし | lease済み配送をACKします。 |
 | `get_conversation_history` | `thread_id` | `limit`, `offset` | 指定Threadの既読・過去分を含む全メッセージ履歴を、作成日時の昇順で返します。該当Threadが存在しない場合は空配列を返します。 |
 | `inspect_change_request` | `payload_json` | なし | CRファイルを再検証し、payloadに記録された状態との不一致を返します。 |
+| `get_hook_context` | `agent_id` | `hook_event_name`, `limit`, `lease_seconds`, `thread_id`, `message_type` | メッセージをleaseし、CLI Hook互換のコンテキストと停止状態を返します。 |
+| `get_auth_status` | なし | なし | 値を表示せず、ユーザー認証トークンの設定有無を返します。 |
+| `rotate_auth_token` | `confirmation=ROTATE` | なし | トークン値を返さずに更新します。実行後はサーバーとクライアントの再起動が必要です。 |
 
 `get_version`は、稼働中サーバーの名前と`x.x.x`または`x.x.x.x`形式の製品バージョンを返します。
 

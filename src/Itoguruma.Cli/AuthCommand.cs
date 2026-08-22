@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Itoguruma.Core;
 
 namespace Itoguruma.Cli;
@@ -12,7 +11,7 @@ public sealed class AuthCommand(
     Func<byte[]>? tokenFactory = null)
 {
     private const string Confirmation = "ROTATE";
-    private readonly Func<byte[]> _tokenFactory = tokenFactory ?? CreateToken;
+    private readonly AuthenticationTokenService _tokenService = new(tokenStore, tokenFactory);
 
     /// <summary>指定されたauthサブコマンドを実行します。</summary>
     public int Run(IReadOnlyList<string> arguments)
@@ -34,7 +33,7 @@ public sealed class AuthCommand(
 
     private int Status()
     {
-        output.WriteLine(tokenStore.IsConfigured
+        output.WriteLine(_tokenService.IsConfigured
             ? AppLocalization.Text("Authentication token: configured.", "認証トークン: 設定済みです。")
             : AppLocalization.Text("Authentication token: not configured.", "認証トークン: 未設定です。"));
         return 0;
@@ -51,59 +50,18 @@ public sealed class AuthCommand(
             return 1;
         }
 
-        byte[] token = _tokenFactory();
         try
         {
-            if (token.Length < 32)
-            {
-                throw new InvalidOperationException("The token generator returned fewer than 32 bytes.");
-            }
-
-            tokenStore.Save(Convert.ToBase64String(token).TrimEnd('=').Replace('+', '-').Replace('/', '_'));
+            _tokenService.Rotate();
         }
         catch (Exception ex)
         {
             error.WriteLine(AppLocalization.Text($"Token rotation failed: {ex.Message}", $"トークンの更新に失敗しました: {ex.Message}"));
             return 2;
         }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(token);
-        }
-
         output.WriteLine(AppLocalization.Text("Authentication token rotated. The token value is not displayed.", "認証トークンを更新しました。トークン値は表示しません。"));
         output.WriteLine("Next: restart the ItogurumaServer scheduled task, open a new terminal, and restart Codex and Claude Code.");
         output.WriteLine("Reconfigure clients that store the bearer token directly, including Claude Code and Hataori.");
         return 0;
-    }
-
-    private static byte[] CreateToken() => RandomNumberGenerator.GetBytes(32);
-}
-
-/// <summary>ユーザー環境の認証トークンを読み書きします。</summary>
-public interface IUserTokenStore
-{
-    /// <summary>トークンが設定済みかどうかを取得します。</summary>
-    bool IsConfigured { get; }
-
-    /// <summary>トークンを永続化します。</summary>
-    void Save(string token);
-}
-
-/// <summary>ユーザー環境変数へ認証トークンを保存します。</summary>
-public sealed class UserEnvironmentTokenStore : IUserTokenStore
-{
-    private const string VariableName = "ITOGURUMA_AUTH_TOKEN";
-
-    /// <inheritdoc />
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(
-        Environment.GetEnvironmentVariable(VariableName, EnvironmentVariableTarget.User));
-
-    /// <inheritdoc />
-    public void Save(string token)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(token);
-        Environment.SetEnvironmentVariable(VariableName, token, EnvironmentVariableTarget.User);
-        Environment.SetEnvironmentVariable(VariableName, token, EnvironmentVariableTarget.Process);
     }
 }

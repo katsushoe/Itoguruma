@@ -11,10 +11,12 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Creates or refreshes an agent. |
 | `itoguruma agents` | None | `--db` | Lists registered agents. |
 | `itoguruma unregister` | `--agent` | `--db` | Removes an unreferenced agent. |
-| `itoguruma send` | `--from`, `--to`, `--body`, `--thread` | `--reply-to`, `--message-type`, `--payload-json`, `--idempotency-key`, `--db` | Persists a message and queues deliveries. |
+| `itoguruma send` | `--from`, one or more `--to`, `--body`, `--thread` | `--reply-to`, `--message-type`, `--payload-json`, `--idempotency-key`, `--db` | Persists a message and queues deliveries. |
 | `itoguruma inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Leases deliverable messages. |
 | `itoguruma ack` | `--agent`, `--message` | `--db` | Acknowledges a leased delivery. |
-| `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Converts inbox messages to lifecycle-hook output. |
+| `itoguruma history` | `--thread` | `--limit`, `--offset`, `--db` | Returns the conversation history oldest first. |
+| `itoguruma inspect-change-request` | `--payload-json` | `--db` | Revalidates a CR file and reports state differences. |
+| `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Converts inbox messages to lifecycle-hook output. |
 | `itoguruma auth status` | None | None | Reports token presence without revealing it. |
 | `itoguruma auth rotate` | Confirmation | None | Replaces the user token with 32 random bytes. |
 | `itoguruma version` | None | None | Prints the product version in `x.x.x` or `x.x.x.x` format. |
@@ -31,6 +33,9 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `ack_message` | `agent_id`, `message_id` | Acknowledges only the matching leased delivery. |
 | `get_conversation_history` | `thread_id` | Returns the thread oldest first, including acknowledged messages; an unknown thread returns an empty array. |
 | `inspect_change_request` | `payload_json` | Revalidates the CR file and reports payload/file state differences. |
+| `get_hook_context` | `agent_id` | Leases messages and returns CLI-hook-compatible context and stop state. |
+| `get_auth_status` | None | Reports token presence without revealing it. |
+| `rotate_auth_token` | `confirmation=ROTATE` | Replaces the user token without returning its value; server and clients must be restarted. |
 
 `get_version` returns the running server name and its product version in `x.x.x` or `x.x.x.x` format.
 

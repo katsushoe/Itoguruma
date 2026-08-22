@@ -177,6 +177,11 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("`sqlite/table/write/reference_key`", description, StringComparison.Ordinal);
         Assert.Contains("`validation/argument`", description, StringComparison.Ordinal);
         Assert.Contains("`internal`", description, StringComparison.Ordinal);
+
+        var names = tools.EnumerateArray().Select(tool => tool.GetProperty("name").GetString()).ToArray();
+        Assert.Contains("get_hook_context", names);
+        Assert.Contains("get_auth_status", names);
+        Assert.Contains("rotate_auth_token", names);
     }
 
     [Fact]
@@ -280,6 +285,32 @@ public sealed class ProcessIntegrationTests : IDisposable
         });
         Assert.Equal(messageCount, messageIds.Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(messageCount, (await service.GetMessagesAsync("recipient", limit: messageCount)).Count);
+    }
+
+    [Fact]
+    public async Task AgentCli_WhenMultipleRecipientsAndHistoryAreRequested_MatchesMcpCapabilities()
+    {
+        var databasePath = Path.Combine(_directory, "cli-symmetry.db");
+        var service = new MessagingService(new SqliteMessageStore(databasePath));
+        await service.InitializeAsync();
+        await service.RegisterAgentAsync("sender", "test");
+        await service.RegisterAgentAsync("recipient-a", "test");
+        await service.RegisterAgentAsync("recipient-b", "test");
+
+        var send = await RunAsync("itoguruma",
+        [
+            "send", "--from", "sender", "--to", "recipient-a", "--to", "recipient-b",
+            "--thread", "symmetry", "--body", "shared message"
+        ], databasePath, string.Empty);
+        var history = await RunAsync("itoguruma",
+            ["history", "--thread", "symmetry"], databasePath, string.Empty);
+
+        Assert.Equal(0, send.ExitCode);
+        Assert.Equal(0, history.ExitCode);
+        Assert.Single(await service.GetMessagesAsync("recipient-a"));
+        Assert.Single(await service.GetMessagesAsync("recipient-b"));
+        using var document = JsonDocument.Parse(history.StandardOutput);
+        Assert.Equal("shared message", Assert.Single(document.RootElement.EnumerateArray()).GetProperty("body").GetString());
     }
 
     [Fact]

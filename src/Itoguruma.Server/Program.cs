@@ -64,6 +64,8 @@ var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new Chan
 var messagingService = new MessagingService(new SqliteMessageStore(databasePath), changeRequestValidator);
 await messagingService.InitializeAsync();
 builder.Services.AddSingleton(messagingService);
+builder.Services.AddSingleton<IUserTokenStore, UserEnvironmentTokenStore>();
+builder.Services.AddSingleton<AuthenticationTokenService>();
 builder.Services
     .AddMcpServer(options =>
     {
