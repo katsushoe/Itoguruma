@@ -17,7 +17,7 @@
 | `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Claude Code／Codex Hook入力を読み、InboxをHook出力へ追加します。 |
 | `itoguruma auth status` | なし | なし | 値を表示せず、ユーザー認証トークンの設定有無を表示します。 |
 | `itoguruma auth rotate` | なし | なし | 明示確認後に32バイトの暗号学的乱数でユーザー認証トークンをローテーションします。 |
-| `itoguruma version` | なし | なし | 製品バージョンを`x.x.x.x`形式で表示します。 |
+| `itoguruma version` | なし | なし | 製品バージョンを`x.x.x`または`x.x.x.x`形式で表示します。 |
 | `itoguruma --help` | なし | なし | CLI概要を表示します。 |
 
 ## CLI例
@@ -53,7 +53,7 @@ itoguruma auth rotate
 | `get_conversation_history` | `thread_id` | `limit`, `offset` | 指定Threadの既読・過去分を含む全メッセージ履歴を、作成日時の昇順で返します。該当Threadが存在しない場合は空配列を返します。 |
 | `inspect_change_request` | `payload_json` | なし | CRファイルを再検証し、payloadに記録された状態との不一致を返します。 |
 
-`get_version`は、稼働中サーバーの名前と`x.x.x.x`形式の製品バージョンを返します。
+`get_version`は、稼働中サーバーの名前と`x.x.x`または`x.x.x.x`形式の製品バージョンを返します。
 
 `send_message`の宛先は、単一宛先なら`recipient`、複数宛先なら`recipients`を使います。`message_type`は`message`、`notification`、`system`、`change_request`のいずれかです。CRは通常メッセージへフォールバックせず、登録済み担当Agentを明示的な宛先に指定します。
 
