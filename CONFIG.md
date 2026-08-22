@@ -20,6 +20,7 @@ Environment variables override `src/Itoguruma.Server/appsettings.json`. Installe
 | `ITOGURUMA_CONFIG_DIR` | No | Directory path | Installation `config` directory | Must be writable for generated client configuration. |
 | `ITOGURUMA_LOG_DIR` | No | Directory path | Installation `logs` directory | Must be writable by the server process. |
 | `ITOGURUMA_CR_ROOT` / `Itoguruma:CrRoot` | For CR delivery | Directory path | None | Must identify the shared CR root; files must be below `inbox/<target_project>/`. |
+| `ITOGURUMA_SINGLE_INSTANCE_WAIT_SECONDS` / `Itoguruma:SingleInstanceWaitSeconds` | No | Integer | `5` | Must be 0-60; waits for a stopping server to release its single-instance locks before restart. |
 
 ## Example
 

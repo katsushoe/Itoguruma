@@ -20,6 +20,7 @@
 | `ITOGURUMA_CONFIG_DIR` | いいえ | ディレクトリパス | インストール先の`config` | 生成設定の書き込み権限が必要です。 |
 | `ITOGURUMA_LOG_DIR` | いいえ | ディレクトリパス | インストール先の`logs` | サーバープロセスの書き込み権限が必要です。 |
 | `ITOGURUMA_CR_ROOT`／`Itoguruma:CrRoot` | CR配送時 | ディレクトリパス | なし | 共有CRルートを指定し、対象ファイルを`inbox/<target_project>/`配下へ置きます。 |
+| `ITOGURUMA_SINGLE_INSTANCE_WAIT_SECONDS`／`Itoguruma:SingleInstanceWaitSeconds` | いいえ | 整数 | `5` | 0～60。再起動時に、停止中Serverが単一インスタンスロックを解放するまで待機します。 |
 
 ## 例
 
