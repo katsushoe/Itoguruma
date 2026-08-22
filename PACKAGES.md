@@ -11,9 +11,9 @@
 | `Itoguruma.Tests` | `Microsoft.NET.Test.Sdk` | `17.11.1` | Test host integration. |
 | `Itoguruma.Tests` | `xunit` | `2.9.2` | Test framework. |
 | `Itoguruma.Tests` | `xunit.runner.visualstudio` | `2.8.2` | Test discovery and execution adapter; private asset. |
-| `Itoguruma.Installer` | `WixToolset.Sdk` | `7.0.0` | x64 MSI build. |
-| `Itoguruma.Installer` | `WixToolset.UI.wixext` | `7.0.0` | MSI language selection UI. |
-| `Itoguruma.Installer` | `WixToolset.Util.wixext` | `7.0.0` | Logged MSI custom-action execution. |
+| `Itoguruma.Installer` | `WixToolset.Sdk` | `5.0.2` | x64 MSI build. |
+| `Itoguruma.Installer` | `WixToolset.UI.wixext` | `5.0.2` | MSI language selection UI. |
+| `Itoguruma.Installer` | `WixToolset.Util.wixext` | `5.0.2` | Logged MSI custom-action execution. |
 
 ## Sources and updates
 
