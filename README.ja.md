@@ -34,6 +34,8 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 
 メッセージは`pending`、`leased`、`acked`の配送状態を遷移します。ACK前にleaseが失効すると再配送されます。同じ論理送信を再試行するときは、同じ`idempotency_key`を使用してください。詳細は[COMMANDS.ja.md](COMMANDS.ja.md)を参照してください。
 
+各プロジェクトIDはProviderを`agent_type`／`--type`へ指定して登録します。Itogurumaは受付時の登録値を読み取り専用`provider`として各メッセージへ保存するため、lease再配送とThread履歴でも送信時点の値が維持されます。
+
 正式な変更依頼（CR）は、設定した共有CRルート内の検証済みMarkdownファイルを正本とします。無効なCRを通常メッセージへ自動変換しません。
 
 ## ドキュメント
@@ -45,6 +47,7 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 - [依存パッケージ](PACKAGES.ja.md)
 - [セキュリティ](SECURITY.ja.md)
 - [アーキテクチャ判断](docs/adr/0001-streamable-http-server.md)
+- [メッセージProvider自動付与の判断](docs/adr/0004-message-provider-attribution.md)
 
 ## セキュリティ
 

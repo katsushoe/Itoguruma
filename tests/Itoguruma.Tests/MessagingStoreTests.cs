@@ -21,6 +21,45 @@ public sealed class MessagingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Message_WhenSenderIsRegistered_StoresNormalizedProviderAcrossDeliveryAndHistory()
+    {
+        var store = CreateStore();
+        await store.InitializeAsync();
+        await new MessagingService(store).RegisterAgentAsync("sender", " CoDeX ");
+        await new MessagingService(store).RegisterAgentAsync("recipient", "claude-code");
+
+        await store.SendMessageAsync(new("sender", ["recipient"], "hello", "provider-thread"));
+        var first = Assert.Single(await store.GetMessagesAsync("recipient", leaseDuration: TimeSpan.FromMilliseconds(-1)));
+        var redelivery = Assert.Single(await store.GetMessagesAsync("recipient"));
+        var history = Assert.Single(await store.GetConversationHistoryAsync("provider-thread"));
+
+        Assert.Equal("codex", first.Provider);
+        Assert.Equal(first.Provider, redelivery.Provider);
+        Assert.Equal(first.Provider, history.Provider);
+    }
+
+    [Fact]
+    public async Task SendMessage_WhenSenderProviderIsMissing_DoesNotPersistMessage()
+    {
+        var store = CreateStore();
+        await store.InitializeAsync();
+        await store.RegisterAgentAsync("sender", "codex");
+        await store.RegisterAgentAsync("recipient", "codex");
+        await using (var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder { DataSource = Path.Combine(_directory, "messages.db"), Pooling = false }.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE agents SET agent_type='' WHERE agent_id='sender'";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await Assert.ThrowsAsync<ProviderNotRegisteredException>(() =>
+            store.SendMessageAsync(new("sender", ["recipient"], "blocked", "provider-thread")));
+        Assert.Empty(await store.GetConversationHistoryAsync("provider-thread"));
+    }
+
+    [Fact]
     public async Task Message_WhenLeaseExpires_IsDeliveredAgain()
     {
         var store=CreateStore(); await store.InitializeAsync();
@@ -195,6 +234,53 @@ public sealed class MessagingStoreTests : IDisposable
 
         var message = Assert.Single(await store.GetMessagesAsync("b"));
         Assert.Equal("change_request", message.MessageType);
+        Assert.Equal("test", message.Provider);
+    }
+
+    [Fact]
+    public async Task Initialize_WhenSchemaVersionIsThree_MarksExistingMessagesWithUnknownProvider()
+    {
+        Directory.CreateDirectory(_directory);
+        var databasePath = Path.Combine(_directory, "messages.db");
+        await using (var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE agents (
+                  agent_id TEXT PRIMARY KEY, name TEXT NOT NULL, agent_type TEXT NOT NULL,
+                  session_id TEXT NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
+                  metadata_json TEXT NULL);
+                CREATE TABLE messages (
+                  message_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL,
+                  sender_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+                  reply_to_message_id TEXT NULL REFERENCES messages(message_id),
+                  message_type TEXT NOT NULL CHECK(message_type IN ('message','notification','system','change_request')),
+                  body TEXT NOT NULL, payload_json TEXT NULL, created_at TEXT NOT NULL,
+                  idempotency_key TEXT NULL);
+                CREATE TABLE message_deliveries (
+                  message_id TEXT NOT NULL REFERENCES messages(message_id),
+                  recipient_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+                  status TEXT NOT NULL CHECK(status IN ('pending','leased','acked')),
+                  lease_until TEXT NULL, delivered_at TEXT NULL, acked_at TEXT NULL,
+                  PRIMARY KEY(message_id,recipient_agent_id));
+                INSERT INTO agents VALUES('sender','sender','Codex',NULL,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',NULL);
+                INSERT INTO agents VALUES('recipient','recipient','codex',NULL,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',NULL);
+                INSERT INTO messages VALUES('legacy','legacy-thread','sender',NULL,'message','legacy',NULL,'2026-01-01T00:00:00Z',NULL);
+                INSERT INTO message_deliveries VALUES('legacy','recipient','pending',NULL,NULL,NULL);
+                PRAGMA user_version=3;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var store = new SqliteMessageStore(databasePath);
+        await store.InitializeAsync();
+
+        var message = Assert.Single(await store.GetMessagesAsync("recipient"));
+        var sender = Assert.Single(await store.ListAgentsAsync(), agent => agent.AgentId == "sender");
+        Assert.Equal("unknown", message.Provider);
+        Assert.Equal("codex", sender.AgentType);
     }
 
     public void Dispose() { if(Directory.Exists(_directory)) Directory.Delete(_directory,true); }

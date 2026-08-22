@@ -87,6 +87,11 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
               ON messages(sender_agent_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
             PRAGMA user_version=3;
             """, cancellationToken);
+            if (version < 4) await ApplyAsync(connection, (SqliteTransaction)transaction, """
+            ALTER TABLE messages ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown';
+            UPDATE agents SET agent_type=lower(trim(agent_type));
+            PRAGMA user_version=4;
+            """, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
 
@@ -102,6 +107,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         string? sessionId = null, string? metadataJson = null, CancellationToken cancellationToken = default)
     {
         RequireText(agentId, nameof(agentId)); RequireText(agentType, nameof(agentType));
+        agentType = NormalizeProvider(agentType);
         var now = Now();
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -155,6 +161,8 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
+            var provider = await ResolveProviderAsync(connection, (SqliteTransaction)transaction,
+                request.SenderAgentId, cancellationToken);
             if (request.IdempotencyKey is not null)
             {
                 await using var existing = connection.CreateCommand();
@@ -171,11 +179,12 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             {
                 message.Transaction = (SqliteTransaction)transaction;
                 message.CommandText = """
-                    INSERT OR IGNORE INTO messages(message_id,thread_id,sender_agent_id,reply_to_message_id,message_type,body,payload_json,created_at,idempotency_key)
-                    VALUES($id,$thread,$sender,$reply,$type,$body,$payload,$created,$key)
+                    INSERT OR IGNORE INTO messages(message_id,thread_id,sender_agent_id,provider,reply_to_message_id,message_type,body,payload_json,created_at,idempotency_key)
+                    VALUES($id,$thread,$sender,$provider,$reply,$type,$body,$payload,$created,$key)
                     """;
                 Add(message, "$id", messageId); Add(message, "$thread", request.ThreadId);
-                Add(message, "$sender", request.SenderAgentId); Add(message, "$reply", request.ReplyToMessageId);
+                Add(message, "$sender", request.SenderAgentId); Add(message, "$provider", provider);
+                Add(message, "$reply", request.ReplyToMessageId);
                 Add(message, "$type", request.MessageType); Add(message, "$body", request.Body);
                 Add(message, "$payload", request.PayloadJson); Add(message, "$created", Format(Now()));
                 Add(message, "$key", request.IdempotencyKey);
@@ -236,7 +245,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         {
             await using var select = connection.CreateCommand(); select.Transaction = (SqliteTransaction)transaction;
             select.CommandText = """
-                SELECT m.message_id,m.thread_id,m.sender_agent_id,m.reply_to_message_id,m.message_type,
+                SELECT m.message_id,m.thread_id,m.sender_agent_id,m.provider,m.reply_to_message_id,m.message_type,
                   m.body,m.payload_json,m.created_at,d.status,d.lease_until FROM messages m
                 JOIN message_deliveries d ON d.message_id=m.message_id
                 WHERE m.message_id=$id AND d.recipient_agent_id=$agent;
@@ -259,15 +268,15 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT message_id,thread_id,sender_agent_id,reply_to_message_id,message_type,body,payload_json,created_at
+            SELECT message_id,thread_id,sender_agent_id,provider,reply_to_message_id,message_type,body,payload_json,created_at
             FROM messages WHERE thread_id=$thread ORDER BY created_at ASC LIMIT $limit OFFSET $offset;
             """;
         Add(command, "$thread", threadId); Add(command, "$limit", limit); Add(command, "$offset", offset);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
             history.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetString(4), reader.GetString(5),
-                reader.IsDBNull(6) ? null : reader.GetString(6), Parse(reader.GetString(7))));
+                reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5),
+                reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), Parse(reader.GetString(8))));
         return history;
     }
 
@@ -297,6 +306,40 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     private static void Add(SqliteCommand command, string name, object? value) => command.Parameters.AddWithValue(name, value ?? DBNull.Value);
     private static void RequireText(string value, string name) { if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException("Value is required.", name); }
     private static Message ReadMessage(SqliteDataReader r) => new(r.GetString(0), r.GetString(1), r.GetString(2),
-        r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4), r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6),
-        Parse(r.GetString(7)), r.GetString(8), r.IsDBNull(9) ? null : Parse(r.GetString(9)));
+        r.GetString(3), r.IsDBNull(4) ? null : r.GetString(4), r.GetString(5), r.GetString(6),
+        r.IsDBNull(7) ? null : r.GetString(7), Parse(r.GetString(8)), r.GetString(9),
+        r.IsDBNull(10) ? null : Parse(r.GetString(10)));
+
+    private static async Task<string> ResolveProviderAsync(SqliteConnection connection, SqliteTransaction transaction,
+        string senderAgentId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT agent_type FROM agents WHERE agent_id=$sender";
+        Add(command, "$sender", senderAgentId);
+        var value = await command.ExecuteScalarAsync(cancellationToken) as string;
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "unknown", StringComparison.Ordinal)
+            || !string.Equals(value, NormalizeProviderOrNull(value), StringComparison.Ordinal))
+            throw new ProviderNotRegisteredException(senderAgentId);
+        return value;
+    }
+
+    private static string NormalizeProvider(string provider) => NormalizeProviderOrNull(provider)
+        ?? throw new ArgumentException(
+            "Provider must contain only ASCII letters, digits, or hyphens and must not be unknown.",
+            nameof(provider));
+
+    private static string? NormalizeProviderOrNull(string provider)
+    {
+        var normalized = provider.Trim().ToLowerInvariant();
+        return normalized.Length > 0
+            && !string.Equals(normalized, "unknown", StringComparison.Ordinal)
+            && normalized.All(character => char.IsAsciiLetterOrDigit(character) || character == '-')
+            ? normalized
+            : null;
+    }
 }
+
+/// <summary>送信元AgentへProviderが登録されていないことを示します。</summary>
+public sealed class ProviderNotRegisteredException(string agentId)
+    : InvalidOperationException($"Sender agent '{agentId}' does not have a registered provider.");

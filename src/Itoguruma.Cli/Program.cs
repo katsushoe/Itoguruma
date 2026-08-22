@@ -31,6 +31,10 @@ var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new Chan
 var service = new MessagingService(new SqliteMessageStore(db), changeRequestValidator); await service.InitializeAsync();
 try
 {
+    if (arguments[0] == "send" && arguments.Contains("--provider", StringComparer.Ordinal))
+        throw new ArgumentException(AppLocalization.Text(
+            "--provider is read-only and cannot be supplied when sending a message.",
+            "--providerは読み取り専用であり、メッセージ送信時には指定できません。"));
     if (arguments[0] == "hook") return await RunHookAsync(service, Required("--agent"));
     object result = arguments[0] switch
     {

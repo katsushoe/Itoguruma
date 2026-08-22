@@ -34,6 +34,8 @@ The server requires `ITOGURUMA_AUTH_TOKEN`; it also supports `ITOGURUMA_URL`, `I
 
 Messages move through `pending`, `leased`, and `acked` delivery states. A lease that expires before acknowledgement becomes deliverable again. Reuse the same `idempotency_key` when retrying the same logical send. See [COMMANDS.md](COMMANDS.md).
 
+Register each project ID with its provider in `agent_type`/`--type`. Itoguruma snapshots that registration as the read-only `provider` on every accepted message, so lease redelivery and conversation history retain the send-time value.
+
 Formal change requests use a validated Markdown file under the configured shared CR root and a `change_request` message containing its path and index metadata. Invalid requests never fall back to ordinary messages.
 
 ## Documentation
@@ -45,6 +47,7 @@ Formal change requests use a validated Markdown file under the configured shared
 - [Package dependencies](PACKAGES.md)
 - [Security](SECURITY.md)
 - [Architecture decisions](docs/adr/0001-streamable-http-server.md)
+- [Message provider attribution decision](docs/adr/0004-message-provider-attribution.md)
 
 ## Security
 
