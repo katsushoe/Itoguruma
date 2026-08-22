@@ -26,7 +26,9 @@ if (arguments[0] == "auth")
 }
 var db = Option("--db") ?? Environment.GetEnvironmentVariable("ITOGURUMA_DB")
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
-var service = new MessagingService(new SqliteMessageStore(db)); await service.InitializeAsync();
+var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT");
+var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
+var service = new MessagingService(new SqliteMessageStore(db), changeRequestValidator); await service.InitializeAsync();
 try
 {
     if (arguments[0] == "hook") return await RunHookAsync(service, Required("--agent"));
@@ -35,9 +37,11 @@ try
         "register" => await service.RegisterAgentAsync(Required("--agent"), Required("--type"), Option("--name"), Option("--session"), Option("--metadata")),
         "agents" => await service.ListAgentsAsync(),
         "unregister" => new { unregistered = await service.UnregisterAgentAsync(Required("--agent")) },
-        "send" => new { message_id = await service.SendMessageAsync(new(Required("--from"), [Required("--to")], Required("--body"), Required("--thread"), Option("--reply-to"), Option("--message-type") ?? "message", Option("--payload-json"), Option("--idempotency-key"))) },
+        "send" => new { message_id = await service.SendMessageAsync(new(Required("--from"), RequiredMany("--to"), Required("--body"), Required("--thread"), Option("--reply-to"), Option("--message-type") ?? "message", Option("--payload-json"), Option("--idempotency-key"))) },
         "inbox" => await service.GetMessagesAsync(Required("--agent"), Number("--limit",50), TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"), Option("--message-type")),
         "ack" => new { acked = await service.AckMessageAsync(Required("--agent"), Required("--message")) },
+        "history" => await service.GetConversationHistoryAsync(Required("--thread"), Number("--limit", 100), Number("--offset", 0)),
+        "inspect-change-request" => await service.InspectChangeRequestAsync(Required("--payload-json")),
         _ => throw new ArgumentException(AppLocalization.Text($"Unknown command: {arguments[0]}", $"不明なコマンドです: {arguments[0]}"))
     };
     Console.WriteLine(JsonSerializer.Serialize(result,new JsonSerializerOptions(JsonSerializerDefaults.Web){WriteIndented=true})); return 0;
@@ -46,15 +50,24 @@ catch(Exception ex) { Console.Error.WriteLine(ex.Message); return 2; }
 
 string? Option(string name) { var i=arguments.IndexOf(name); return i>=0 && i+1<arguments.Count ? arguments[i+1] : null; }
 string Required(string name) => Option(name) ?? throw new ArgumentException(AppLocalization.Text($"Missing option: {name}", $"必須オプションがありません: {name}"));
+IReadOnlyList<string> RequiredMany(string name)
+{
+    var values = arguments.Select((value, index) => (value, index))
+        .Where(item => item.value == name && item.index + 1 < arguments.Count)
+        .Select(item => arguments[item.index + 1]).ToArray();
+    return values.Length > 0
+        ? values
+        : throw new ArgumentException(AppLocalization.Text($"Missing option: {name}", $"必須オプションがありません: {name}"));
+}
 int Number(string name,int fallback) => int.TryParse(Option(name),out var value) ? value : fallback;
-static int Usage() { Console.WriteLine(AppLocalization.Text("itoguruma register|agents|unregister|send|inbox|ack|hook|auth|version [options]\nSet ITOGURUMA_DB or pass --db <path>.", "itoguruma register|agents|unregister|send|inbox|ack|hook|auth|version [options]\nITOGURUMA_DBを設定するか、--db <path>を指定してください。")); return 0; }
+static int Usage() { Console.WriteLine(AppLocalization.Text("itoguruma register|agents|unregister|send|inbox|ack|history|inspect-change-request|hook|auth|version [options]\nSet ITOGURUMA_DB or pass --db <path>.", "itoguruma register|agents|unregister|send|inbox|ack|history|inspect-change-request|hook|auth|version [options]\nITOGURUMA_DBを設定するか、--db <path>を指定してください。")); return 0; }
 
 async Task<int> RunHookAsync(MessagingService messagingService, string agentId)
 {
     var input = await Console.In.ReadToEndAsync();
     var eventName = ParseEventName(input);
     var messages = await messagingService.GetMessagesAsync(agentId, Number("--limit",50),
-        TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"));
+        TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"), Option("--message-type"));
     if (messages.Count == 0) return 0;
     var context = AppLocalization.Text("Itoguruma inbox messages:\n", "Itoguruma受信メッセージ:\n") + JsonSerializer.Serialize(messages,
         new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });

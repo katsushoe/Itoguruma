@@ -1,4 +1,5 @@
 using Itoguruma.Cli;
+using Itoguruma.Core;
 using Xunit;
 
 namespace Itoguruma.Tests;
