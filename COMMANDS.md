@@ -17,7 +17,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--db` | Converts inbox messages to lifecycle-hook output. |
 | `itoguruma auth status` | None | None | Reports token presence without revealing it. |
 | `itoguruma auth rotate` | Confirmation | None | Replaces the user token with 32 random bytes. |
-| `itoguruma version` | None | None | Prints the product version in `x.x.x.x` format. |
+| `itoguruma version` | None | None | Prints the product version in `x.x.x` or `x.x.x.x` format. |
 
 ## MCP tools
 
@@ -32,7 +32,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `get_conversation_history` | `thread_id` | Returns the thread oldest first, including acknowledged messages; an unknown thread returns an empty array. |
 | `inspect_change_request` | `payload_json` | Revalidates the CR file and reports payload/file state differences. |
 
-`get_version` returns the running server name and its product version in `x.x.x.x` format.
+`get_version` returns the running server name and its product version in `x.x.x` or `x.x.x.x` format.
 
 `message_type` accepts `message`, `notification`, `system`, or `change_request`. A change request requires a registered explicit recipient, a valid payload, and an existing Markdown file under `inbox/<target_project>/` in the configured CR root.
 
