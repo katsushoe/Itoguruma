@@ -13,6 +13,7 @@ public sealed record MonitoredMessage(
     string MessageId,
     string ThreadId,
     string SenderAgentId,
+    string Provider,
     string RecipientAgentId,
     string MessageType,
     string Body,
@@ -82,7 +83,7 @@ public sealed class SqliteMessageMonitor(string databasePath, TimeProvider? time
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
-                SELECT m.message_id, m.thread_id, m.sender_agent_id, d.recipient_agent_id,
+                SELECT m.message_id, m.thread_id, m.sender_agent_id, m.provider, d.recipient_agent_id,
                        m.message_type, m.body, m.payload_json, m.reply_to_message_id,
                        m.idempotency_key, m.created_at, d.status, d.lease_until,
                        d.delivered_at, d.acked_at
@@ -108,10 +109,10 @@ public sealed class SqliteMessageMonitor(string databasePath, TimeProvider? time
             {
                 messages.Add(new(
                     reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                    reader.GetString(4), reader.GetString(5), NullableString(reader, 6),
-                    NullableString(reader, 7), NullableString(reader, 8), Parse(reader.GetString(9)),
-                    reader.GetString(10), NullableDate(reader, 11), NullableDate(reader, 12),
-                    NullableDate(reader, 13)));
+                    reader.GetString(4), reader.GetString(5), reader.GetString(6), NullableString(reader, 7),
+                    NullableString(reader, 8), NullableString(reader, 9), Parse(reader.GetString(10)),
+                    reader.GetString(11), NullableDate(reader, 12), NullableDate(reader, 13),
+                    NullableDate(reader, 14)));
             }
         }
 

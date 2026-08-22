@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using Itoguruma.Core;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Itoguruma.Tests;
@@ -47,6 +48,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var messages = StructuredData(result.Output[4]);
         var message = Assert.Single(messages.EnumerateArray());
         Assert.Equal("integration message", message.GetProperty("body").GetString());
+        Assert.Equal("test", message.GetProperty("provider").GetString());
         var messageId = message.GetProperty("messageId").GetString();
 
         var acknowledgement = await RunMcpAsync(
@@ -84,6 +86,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var history = StructuredData(result.Output[4]).EnumerateArray().ToArray();
         Assert.Equal(2, history.Length);
         Assert.Equal("first", history[0].GetProperty("body").GetString());
+        Assert.Equal("test", history[0].GetProperty("provider").GetString());
         Assert.Equal("second", history[1].GetProperty("body").GetString());
     }
 
@@ -133,6 +136,38 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpServer_WhenSenderProviderIsMissing_ReturnsProviderErrorWithoutPersistingMessage()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-provider-error.db");
+        var store = new SqliteMessageStore(databasePath);
+        await store.InitializeAsync();
+        await store.RegisterAgentAsync("sender", "codex");
+        await store.RegisterAgentAsync("recipient", "codex");
+        await using (var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE agents SET agent_type='' WHERE agent_id='sender'";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var result = await RunMcpAsync([
+            ToolRequest(1, "send_message", new
+            {
+                sender_agent_id = "sender", recipient = "recipient", body = "blocked", thread_id = "provider"
+            })], databasePath);
+
+        var toolResult = result.Output[0].RootElement.GetProperty("result");
+        Assert.True(toolResult.GetProperty("isError").GetBoolean());
+        using var errorDocument = JsonDocument.Parse(
+            toolResult.GetProperty("content")[0].GetProperty("text").GetString()!);
+        Assert.Equal("provider_not_registered",
+            errorDocument.RootElement.GetProperty("errorCode").GetString());
+        Assert.Empty(await store.GetConversationHistoryAsync("provider"));
+    }
+
+    [Fact]
     public async Task McpServer_WhenMessageHasNoRecipient_ReturnsAiFriendlyJsonError()
     {
         var databasePath = Path.Combine(_directory, "mcp-no-recipient.db");
@@ -176,7 +211,10 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("| Category | Meaning | Recommended response |", description, StringComparison.Ordinal);
         Assert.Contains("`sqlite/table/write/reference_key`", description, StringComparison.Ordinal);
         Assert.Contains("`validation/argument`", description, StringComparison.Ordinal);
+        Assert.Contains("`validation/provider`", description, StringComparison.Ordinal);
         Assert.Contains("`internal`", description, StringComparison.Ordinal);
+        Assert.False(sendMessage.GetProperty("inputSchema").GetProperty("properties")
+            .TryGetProperty("provider", out _));
 
         var names = tools.EnumerateArray().Select(tool => tool.GetProperty("name").GetString()).ToArray();
         Assert.Contains("get_hook_context", names);

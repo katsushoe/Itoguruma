@@ -8,7 +8,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 | Command | Required | Optional | Result |
 | :--- | :--- | :--- | :--- |
-| `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Creates or refreshes an agent. |
+| `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Creates or refreshes an agent; `--type` is its provider. |
 | `itoguruma agents` | None | `--db` | Lists registered agents. |
 | `itoguruma unregister` | `--agent` | `--db` | Removes an unreferenced agent. |
 | `itoguruma send` | `--from`, one or more `--to`, `--body`, `--thread` | `--reply-to`, `--message-type`, `--payload-json`, `--idempotency-key`, `--db` | Persists a message and queues deliveries. |
@@ -38,6 +38,8 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `rotate_auth_token` | `confirmation=ROTATE` | Replaces the user token without returning its value; server and clients must be restarted. |
 
 `get_version` returns the running server name and its product version in `x.x.x` or `x.x.x.x` format.
+
+`agent_type`/`--type` is the sender provider, such as `codex` or `claude-code`. It is normalized to lowercase and must contain only ASCII letters, digits, and hyphens. Every newly accepted message stores this registered value as read-only `provider`; senders cannot supply or override it. Sending fails with `provider_not_registered` when the sender has no valid provider. Messages migrated from schema version 3 or earlier return `provider=unknown` without guessing a historical value.
 
 `message_type` accepts `message`, `notification`, `system`, or `change_request`. A change request requires a registered explicit recipient, a valid payload, and an existing Markdown file under `inbox/<target_project>/` in the configured CR root.
 
