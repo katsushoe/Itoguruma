@@ -1,5 +1,6 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
 using Itoguruma.Core;
 using Itoguruma.Server;
 using ModelContextProtocol.Server;
@@ -38,6 +39,14 @@ if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri)
 var databasePath = Environment.GetEnvironmentVariable("ITOGURUMA_DB")
     ?? builder.Configuration["Itoguruma:DatabasePath"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
+var singleInstanceWaitSecondsText = Environment.GetEnvironmentVariable("ITOGURUMA_SINGLE_INSTANCE_WAIT_SECONDS")
+    ?? builder.Configuration["Itoguruma:SingleInstanceWaitSeconds"]
+    ?? "5";
+if (!int.TryParse(singleInstanceWaitSecondsText, out var singleInstanceWaitSeconds)
+    || singleInstanceWaitSeconds is < 0 or > 60)
+{
+    throw new InvalidOperationException("Itoguruma:SingleInstanceWaitSeconds must be between 0 and 60.");
+}
 var authenticationToken = Environment.GetEnvironmentVariable("ITOGURUMA_AUTH_TOKEN")
     ?? builder.Configuration["Itoguruma:AuthenticationToken"];
 if (string.IsNullOrWhiteSpace(authenticationToken))
@@ -45,17 +54,14 @@ if (string.IsNullOrWhiteSpace(authenticationToken))
     throw new InvalidOperationException("Itoguruma:AuthenticationToken is required.");
 }
 
-using var endpointInstance = new Mutex(
-    initiallyOwned: true,
-    ServerSingleInstance.ForEndpoint(serverUrl),
-    out var endpointCreatedNew);
-if (!endpointCreatedNew) return 1;
+var singleInstanceWait = TimeSpan.FromSeconds(singleInstanceWaitSeconds);
+using var endpointInstance = await AcquireMutexAsync(
+    ServerSingleInstance.ForEndpoint(serverUrl), singleInstanceWait);
+if (endpointInstance is null) return 1;
 
-using var databaseInstance = new Mutex(
-    initiallyOwned: true,
-    ServerSingleInstance.ForDatabase(databasePath),
-    out var databaseCreatedNew);
-if (!databaseCreatedNew) return 1;
+using var databaseInstance = await AcquireMutexAsync(
+    ServerSingleInstance.ForDatabase(databasePath), singleInstanceWait);
+if (databaseInstance is null) return 1;
 
 builder.WebHost.UseUrls(serverUrl);
 var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT")
@@ -113,4 +119,17 @@ static bool IsAllowedOrigin(string? origin)
 {
     if (string.IsNullOrWhiteSpace(origin)) return true;
     return Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.IsLoopback;
+}
+
+static async Task<Mutex?> AcquireMutexAsync(string name, TimeSpan timeout)
+{
+    var stopwatch = Stopwatch.StartNew();
+    while (true)
+    {
+        var instance = new Mutex(initiallyOwned: true, name, out var createdNew);
+        if (createdNew) return instance;
+        instance.Dispose();
+        if (stopwatch.Elapsed >= timeout) return null;
+        await Task.Delay(TimeSpan.FromMilliseconds(250));
+    }
 }
