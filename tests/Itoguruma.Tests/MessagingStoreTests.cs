@@ -14,21 +14,21 @@ public sealed class MessagingStoreTests : IDisposable
     {
         var store=CreateStore(); await store.InitializeAsync();
         await store.RegisterAgentAsync("sender","test"); await store.RegisterAgentAsync("recipient","test");
-        var id=await store.SendMessageAsync(new("sender",["recipient"],"hello","thread-1"));
+        var id=await store.SendMessageAsync(new("sender",["recipient"],"hello","thread-1","codex"));
         var first=await store.GetMessagesAsync("recipient");
         Assert.Single(first); Assert.Equal(id,first[0].MessageId); Assert.True(await store.AckMessageAsync("recipient",id));
         Assert.Empty(await store.GetMessagesAsync("recipient"));
     }
 
     [Fact]
-    public async Task Message_WhenSenderIsRegistered_StoresNormalizedProviderAcrossDeliveryAndHistory()
+    public async Task Message_WhenProviderIsProvided_StoresNormalizedProviderAcrossDeliveryAndHistory()
     {
         var store = CreateStore();
         await store.InitializeAsync();
         await new MessagingService(store).RegisterAgentAsync("sender", " CoDeX ");
         await new MessagingService(store).RegisterAgentAsync("recipient", "claude-code");
 
-        await store.SendMessageAsync(new("sender", ["recipient"], "hello", "provider-thread"));
+        await store.SendMessageAsync(new("sender", ["recipient"], "hello", "provider-thread", " CoDeX "));
         var first = Assert.Single(await store.GetMessagesAsync("recipient", leaseDuration: TimeSpan.FromMilliseconds(-1)));
         var redelivery = Assert.Single(await store.GetMessagesAsync("recipient"));
         var history = Assert.Single(await store.GetConversationHistoryAsync("provider-thread"));
@@ -39,23 +39,14 @@ public sealed class MessagingStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task SendMessage_WhenSenderProviderIsMissing_DoesNotPersistMessage()
+    public async Task SendMessage_WhenProviderIsInvalid_DoesNotPersistMessage()
     {
         var store = CreateStore();
         await store.InitializeAsync();
         await store.RegisterAgentAsync("sender", "codex");
         await store.RegisterAgentAsync("recipient", "codex");
-        await using (var connection = new SqliteConnection(
-            new SqliteConnectionStringBuilder { DataSource = Path.Combine(_directory, "messages.db"), Pooling = false }.ToString()))
-        {
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = "UPDATE agents SET agent_type='' WHERE agent_id='sender'";
-            await command.ExecuteNonQueryAsync();
-        }
-
-        await Assert.ThrowsAsync<ProviderNotRegisteredException>(() =>
-            store.SendMessageAsync(new("sender", ["recipient"], "blocked", "provider-thread")));
+        await Assert.ThrowsAsync<ProviderValidationException>(() =>
+            store.SendMessageAsync(new("sender", ["recipient"], "blocked", "provider-thread", "unknown")));
         Assert.Empty(await store.GetConversationHistoryAsync("provider-thread"));
     }
 
@@ -64,7 +55,7 @@ public sealed class MessagingStoreTests : IDisposable
     {
         var store=CreateStore(); await store.InitializeAsync();
         await store.RegisterAgentAsync("a","test"); await store.RegisterAgentAsync("b","test");
-        await store.SendMessageAsync(new("a",["b"],"hello","t"));
+        await store.SendMessageAsync(new("a",["b"],"hello","t","codex"));
         Assert.Single(await store.GetMessagesAsync("b",leaseDuration:TimeSpan.FromMilliseconds(-1)));
         Assert.Single(await store.GetMessagesAsync("b"));
     }
@@ -73,7 +64,7 @@ public sealed class MessagingStoreTests : IDisposable
     public async Task SendMessage_WhenRecipientDoesNotExist_DoesNotPersistMessage()
     {
         var store=CreateStore(); await store.InitializeAsync(); await store.RegisterAgentAsync("a","test");
-        await Assert.ThrowsAnyAsync<Exception>(()=>store.SendMessageAsync(new("a",["missing"],"hello","t")));
+        await Assert.ThrowsAnyAsync<Exception>(()=>store.SendMessageAsync(new("a",["missing"],"hello","t","codex")));
     }
 
     [Fact]
@@ -81,7 +72,7 @@ public sealed class MessagingStoreTests : IDisposable
     {
         var store=CreateStore(); await store.InitializeAsync();
         await store.RegisterAgentAsync("a","test"); await store.RegisterAgentAsync("b","test");
-        var request=new SendMessageRequest("a",["b"],"hello","t",IdempotencyKey:"request-1");
+        var request=new SendMessageRequest("a",["b"],"hello","t","codex",IdempotencyKey:"request-1");
         var first=await store.SendMessageAsync(request); var second=await store.SendMessageAsync(request);
         Assert.Equal(first,second); Assert.Single(await store.GetMessagesAsync("b"));
     }
@@ -91,7 +82,7 @@ public sealed class MessagingStoreTests : IDisposable
     {
         var firstStore=CreateStore(); await firstStore.InitializeAsync();
         await firstStore.RegisterAgentAsync("claude","test"); await firstStore.RegisterAgentAsync("codex","test");
-        var id=await firstStore.SendMessageAsync(new("claude",["codex"],"persist","restart"));
+        var id=await firstStore.SendMessageAsync(new("claude",["codex"],"persist","restart","claude-code"));
 
         var restartedStore=CreateStore(); await restartedStore.InitializeAsync();
         var received=await restartedStore.GetMessagesAsync("codex");
@@ -104,10 +95,10 @@ public sealed class MessagingStoreTests : IDisposable
     {
         var store=CreateStore(); await store.InitializeAsync();
         await store.RegisterAgentAsync("claude","test"); await store.RegisterAgentAsync("codex","test");
-        var outbound=await store.SendMessageAsync(new("claude",["codex"],"request","roundtrip"));
+        var outbound=await store.SendMessageAsync(new("claude",["codex"],"request","roundtrip","claude-code"));
         var atCodex=Assert.Single(await store.GetMessagesAsync("codex"));
         Assert.True(await store.AckMessageAsync("codex",atCodex.MessageId));
-        var reply=await store.SendMessageAsync(new("codex",["claude"],"response","roundtrip",outbound));
+        var reply=await store.SendMessageAsync(new("codex",["claude"],"response","roundtrip","codex",outbound));
         var atClaude=Assert.Single(await store.GetMessagesAsync("claude"));
         Assert.Equal(reply,atClaude.MessageId); Assert.Equal(outbound,atClaude.ReplyToMessageId);
         Assert.True(await store.AckMessageAsync("claude",atClaude.MessageId));
@@ -118,7 +109,7 @@ public sealed class MessagingStoreTests : IDisposable
     {
         var store=CreateStore(); await store.InitializeAsync();
         await store.RegisterAgentAsync("a","test"); await store.RegisterAgentAsync("b","test");
-        var request=new SendMessageRequest("a",["b"],"once","concurrent",IdempotencyKey:"same-key");
+        var request=new SendMessageRequest("a",["b"],"once","concurrent","codex",IdempotencyKey:"same-key");
 
         var ids=await Task.WhenAll(Enumerable.Range(0,8).Select(_=>store.SendMessageAsync(request)));
 
@@ -131,8 +122,8 @@ public sealed class MessagingStoreTests : IDisposable
     {
         var store=CreateStore(); await store.InitializeAsync();
         await store.RegisterAgentAsync("a","test"); await store.RegisterAgentAsync("b","test");
-        var first=await store.SendMessageAsync(new("a",["b"],"first","history-thread"));
-        var second=await store.SendMessageAsync(new("b",["a"],"second","history-thread",first));
+        var first=await store.SendMessageAsync(new("a",["b"],"first","history-thread","codex"));
+        var second=await store.SendMessageAsync(new("b",["a"],"second","history-thread","claude-code",first));
 
         var history=await store.GetConversationHistoryAsync("history-thread");
 
@@ -154,7 +145,7 @@ public sealed class MessagingStoreTests : IDisposable
     {
         var store=CreateStore(); await store.InitializeAsync();
         await store.RegisterAgentAsync("a","test"); await store.RegisterAgentAsync("b","test");
-        for (var i=0;i<5;i++) await store.SendMessageAsync(new("a",["b"],$"m{i}","paged-thread"));
+        for (var i=0;i<5;i++) await store.SendMessageAsync(new("a",["b"],$"m{i}","paged-thread","codex"));
 
         var firstPage=await store.GetConversationHistoryAsync("paged-thread",limit:2,offset:0);
         var secondPage=await store.GetConversationHistoryAsync("paged-thread",limit:2,offset:2);
@@ -186,7 +177,7 @@ public sealed class MessagingStoreTests : IDisposable
     {
         var store=CreateStore(); await store.InitializeAsync();
         await store.RegisterAgentAsync("a","test"); await store.RegisterAgentAsync("b","test");
-        await store.SendMessageAsync(new("a",["b"],"hello","t"));
+        await store.SendMessageAsync(new("a",["b"],"hello","t","codex"));
 
         await Assert.ThrowsAnyAsync<Exception>(()=>store.UnregisterAgentAsync("a"));
         Assert.Contains(await store.ListAgentsAsync(), agent=>agent.AgentId=="a");
@@ -230,11 +221,11 @@ public sealed class MessagingStoreTests : IDisposable
         await store.RegisterAgentAsync("b", "test");
 
         await store.SendMessageAsync(new("a", ["b"], "cr", "t",
-            MessageType: "change_request", PayloadJson: "{}"));
+            Provider: "codex", MessageType: "change_request", PayloadJson: "{}"));
 
         var message = Assert.Single(await store.GetMessagesAsync("b"));
         Assert.Equal("change_request", message.MessageType);
-        Assert.Equal("test", message.Provider);
+        Assert.Equal("codex", message.Provider);
     }
 
     [Fact]
@@ -280,7 +271,7 @@ public sealed class MessagingStoreTests : IDisposable
         var message = Assert.Single(await store.GetMessagesAsync("recipient"));
         var sender = Assert.Single(await store.ListAgentsAsync(), agent => agent.AgentId == "sender");
         Assert.Equal("unknown", message.Provider);
-        Assert.Equal("codex", sender.AgentType);
+        Assert.Equal("Codex", sender.AgentType);
     }
 
     public void Dispose() { if(Directory.Exists(_directory)) Directory.Delete(_directory,true); }
