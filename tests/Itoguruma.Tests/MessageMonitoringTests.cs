@@ -18,17 +18,23 @@ public sealed class MessageMonitoringTests : IDisposable
         await store.SendMessageAsync(new("claude", ["codex"], "pending body", "pending-thread", "claude-code"));
         var leasedId = await store.SendMessageAsync(new("claude", ["codex"], "leased body", "leased-thread", "claude-code"));
         Assert.Contains(await store.GetMessagesAsync("codex", threadId: "leased-thread"), x => x.MessageId == leasedId);
+        var acknowledgedId = await store.SendMessageAsync(new("claude", ["codex"], "acked body", "acked-thread", "claude-code"));
+        Assert.Contains(await store.GetMessagesAsync("codex", threadId: "acked-thread"), x => x.MessageId == acknowledgedId);
+        Assert.True(await store.AckMessageAsync("codex", acknowledgedId));
 
         var monitor = new SqliteMessageMonitor(DatabasePath);
         var snapshot = await monitor.LoadAsync(new());
 
         Assert.Equal(1, snapshot.PendingCount);
         Assert.Equal(1, snapshot.LeasedCount);
-        Assert.Equal(0, snapshot.AcknowledgedCount);
-        Assert.Equal(2, snapshot.Messages.Count);
-        var secondSnapshot = await monitor.LoadAsync(new(Status: "leased"));
-        Assert.Single(secondSnapshot.Messages);
-        Assert.Equal("leased", secondSnapshot.Messages[0].DeliveryStatus);
+        Assert.Equal(1, snapshot.AcknowledgedCount);
+        Assert.Equal(3, snapshot.Messages.Count);
+        var leasedSnapshot = await monitor.LoadAsync(new(Status: "leased"));
+        Assert.Single(leasedSnapshot.Messages);
+        Assert.Equal("leased", leasedSnapshot.Messages[0].DeliveryStatus);
+        var pendingSnapshot = await monitor.LoadAsync(new(Status: "pending"));
+        var pendingMessage = Assert.Single(pendingSnapshot.Messages);
+        Assert.Equal("pending", pendingMessage.DeliveryStatus);
     }
 
     [Fact]
