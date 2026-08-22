@@ -89,7 +89,6 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             """, cancellationToken);
             if (version < 4) await ApplyAsync(connection, (SqliteTransaction)transaction, """
             ALTER TABLE messages ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown';
-            UPDATE agents SET agent_type=lower(trim(agent_type));
             PRAGMA user_version=4;
             """, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -107,7 +106,6 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         string? sessionId = null, string? metadataJson = null, CancellationToken cancellationToken = default)
     {
         RequireText(agentId, nameof(agentId)); RequireText(agentType, nameof(agentType));
-        agentType = NormalizeProvider(agentType);
         var now = Now();
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -155,14 +153,13 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     {
         RequireText(request.SenderAgentId, nameof(request.SenderAgentId));
         RequireText(request.Body, nameof(request.Body)); RequireText(request.ThreadId, nameof(request.ThreadId));
+        var provider = NormalizeProvider(request.Provider);
         if (request.Recipients.Count == 0) throw new ArgumentException("At least one recipient is required.", nameof(request));
         var messageId = Guid.NewGuid().ToString("N");
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
-            var provider = await ResolveProviderAsync(connection, (SqliteTransaction)transaction,
-                request.SenderAgentId, cancellationToken);
             if (request.IdempotencyKey is not null)
             {
                 await using var existing = connection.CreateCommand();
@@ -310,22 +307,8 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         r.IsDBNull(7) ? null : r.GetString(7), Parse(r.GetString(8)), r.GetString(9),
         r.IsDBNull(10) ? null : Parse(r.GetString(10)));
 
-    private static async Task<string> ResolveProviderAsync(SqliteConnection connection, SqliteTransaction transaction,
-        string senderAgentId, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT agent_type FROM agents WHERE agent_id=$sender";
-        Add(command, "$sender", senderAgentId);
-        var value = await command.ExecuteScalarAsync(cancellationToken) as string;
-        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "unknown", StringComparison.Ordinal)
-            || !string.Equals(value, NormalizeProviderOrNull(value), StringComparison.Ordinal))
-            throw new ProviderNotRegisteredException(senderAgentId);
-        return value;
-    }
-
     private static string NormalizeProvider(string provider) => NormalizeProviderOrNull(provider)
-        ?? throw new ArgumentException(
+        ?? throw new ProviderValidationException(
             "Provider must contain only ASCII letters, digits, or hyphens and must not be unknown.",
             nameof(provider));
 
@@ -340,6 +323,6 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     }
 }
 
-/// <summary>送信元AgentへProviderが登録されていないことを示します。</summary>
-public sealed class ProviderNotRegisteredException(string agentId)
-    : InvalidOperationException($"Sender agent '{agentId}' does not have a registered provider.");
+/// <summary>送信要求のProviderが無効であることを示します。</summary>
+public sealed class ProviderValidationException(string message, string parameterName)
+    : ArgumentException(message, parameterName);

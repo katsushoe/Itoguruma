@@ -19,7 +19,8 @@ public sealed class MessagingStressTests : IDisposable
 
         var sentIds = await Task.WhenAll(Enumerable.Range(0, messageCount).Select(index =>
             stores[index % stores.Count].SendMessageAsync(new(
-                "sender", ["recipient"], $"message-{index}", "stress", IdempotencyKey: $"stress-{index}"))));
+                "sender", ["recipient"], $"message-{index}", "stress", "codex",
+                IdempotencyKey: $"stress-{index}"))));
 
         Assert.Equal(messageCount, sentIds.Distinct(StringComparer.Ordinal).Count());
         var deliveries = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
@@ -64,7 +65,7 @@ public sealed class MessagingStressTests : IDisposable
         await stores[0].RegisterAgentAsync("recipient", "test");
         await Task.WhenAll(Enumerable.Range(0, messageCount).Select(index =>
             stores[index % stores.Count].SendMessageAsync(new(
-                "sender", ["recipient"], $"lease-{index}", "lease-stress"))));
+                "sender", ["recipient"], $"lease-{index}", "lease-stress", "codex"))));
 
         var firstDelivery = await stores[0].GetMessagesAsync(
             "recipient", limit: messageCount, leaseDuration: TimeSpan.FromMilliseconds(100));

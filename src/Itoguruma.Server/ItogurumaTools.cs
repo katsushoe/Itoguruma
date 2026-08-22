@@ -21,7 +21,7 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         |---|---|---|
         | `sqlite/table/write/reference_key` | A sender, recipient, or reply target does not exist. | Register missing agents or correct the reply target, then retry with the same `idempotency_key`. |
         | `validation/argument` | A parameter value is missing or invalid (e.g. no recipient, unsupported `message_type`, malformed `payload_json`). | Fix the parameter named in the error and retry. |
-        | `validation/provider` | The sender is not registered with a provider. | Register or refresh the sender with its provider, then retry with the same `idempotency_key`. |
+        | `validation/provider` | The required provider is missing or invalid. | Supply the sender provider using lowercase ASCII letters, digits, or hyphens, then retry with the same `idempotency_key`. |
         | `validation/change_request` | A CR path, payload field, canonical file field, or status is invalid or inconsistent. | Correct the CR payload or canonical file; do not fall back to a normal message. |
         | `internal` | The operation failed for an unclassified internal reason. | Inspect the error content before retrying. |
         """;
@@ -71,7 +71,7 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
     [McpServerTool(Name = "send_message", Idempotent = true, UseStructuredContent = true,
         OutputSchemaType = typeof(ToolData<MessageSentResult>))]
     [Description(SendMessageDescription)]
-    public async Task<CallToolResult> SendMessage(string sender_agent_id, string body, string thread_id,
+    public async Task<CallToolResult> SendMessage(string sender_agent_id, string provider, string body, string thread_id,
         string? recipient = null, IReadOnlyList<string>? recipients = null,
         string? reply_to_message_id = null, string message_type = "message",
         string? payload_json = null, string? idempotency_key = null,
@@ -83,7 +83,7 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         try
         {
             var messageId = await service.SendMessageAsync(new(
-                sender_agent_id, resolvedRecipients, body, thread_id, reply_to_message_id,
+                sender_agent_id, resolvedRecipients, body, thread_id, provider, reply_to_message_id,
                 message_type, payload_json, idempotency_key), cancellationToken);
             return CreateResult(new MessageSentResult(messageId));
         }
@@ -96,13 +96,13 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
                 "Register every sender and recipient agent, verify reply_to_message_id when supplied, then retry with the same idempotency_key.",
                 true), isError: true);
         }
-        catch (ProviderNotRegisteredException exception)
+        catch (ProviderValidationException exception)
         {
             return CreateResult(new ToolError(
-                "provider_not_registered",
+                "invalid_provider",
                 "validation/provider",
                 exception.Message,
-                "Register or refresh the sender agent with its provider, then retry with the same idempotency_key.",
+                "Supply the sender provider using lowercase ASCII letters, digits, or hyphens, then retry with the same idempotency_key.",
                 true), isError: true);
         }
         catch (ArgumentException exception)
