@@ -9,7 +9,7 @@ namespace Itoguruma.Server;
 
 /// <summary>Itogurumaのメッセージ操作をMCPツールとして公開します。</summary>
 [McpServerToolType]
-public sealed class ItogurumaTools(MessagingService service)
+public sealed class ItogurumaTools(MessagingService service, AuthenticationTokenService tokenService)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -164,6 +164,48 @@ public sealed class ItogurumaTools(MessagingService service)
         int limit = 100, int offset = 0, CancellationToken cancellationToken = default) =>
         new(await service.GetConversationHistoryAsync(thread_id, limit, offset, cancellationToken));
 
+    /// <summary>CLI hookと同じ形式の受信コンテキストを返します。</summary>
+    [McpServerTool(Name = "get_hook_context", UseStructuredContent = true)]
+    [Description("Lease messages and format the same context produced by the CLI hook command.")]
+    public async Task<ToolData<HookContextResult>> GetHookContext(string agent_id,
+        string? hook_event_name = null, int limit = 50, int lease_seconds = 300,
+        string? thread_id = null, string? message_type = null,
+        CancellationToken cancellationToken = default)
+    {
+        var messages = await service.GetMessagesAsync(agent_id, limit, TimeSpan.FromSeconds(lease_seconds),
+            thread_id, message_type, cancellationToken);
+        var context = messages.Count == 0 ? null :
+            AppLocalization.Text("Itoguruma inbox messages:\n", "Itoguruma受信メッセージ:\n") +
+            JsonSerializer.Serialize(messages, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
+        return new(new(context, messages.Count > 0 &&
+            string.Equals(hook_event_name, "Stop", StringComparison.Ordinal), messages));
+    }
+
+    /// <summary>認証トークンの設定状態を返します。</summary>
+    [McpServerTool(Name = "get_auth_status", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Return whether the user authentication token is configured without exposing its value.")]
+    public ToolData<AuthStatusResult> GetAuthStatus() => new(new(tokenService.IsConfigured));
+
+    /// <summary>認証トークンを確認文字列付きで更新します。</summary>
+    [McpServerTool(Name = "rotate_auth_token", Destructive = true, UseStructuredContent = true)]
+    [Description("Rotate the user authentication token when confirmation is exactly ROTATE. " +
+        "The token value is never returned. Restart the server and all clients afterward.")]
+    public CallToolResult RotateAuthToken(string confirmation)
+    {
+        if (!string.Equals(confirmation, "ROTATE", StringComparison.Ordinal))
+        {
+            return CreateResult(new ToolError(
+                "confirmation_required", "validation/confirmation",
+                "Token rotation requires confirmation to be exactly ROTATE.",
+                "Review the restart and client reconfiguration impact, then retry with confirmation=ROTATE.",
+                true), isError: true);
+        }
+
+        tokenService.Rotate();
+        return CreateResult(new AuthRotationResult(true,
+            "Restart ItogurumaServer, Codex, Claude Code, and clients that store the bearer token directly."));
+    }
+
     private static CallToolResult CreateResult<T>(T data, bool isError = false)
     {
         var wrapped = new ToolData<T>(data);
@@ -190,6 +232,15 @@ public sealed record AcknowledgementResult(bool Acked);
 
 /// <summary>エージェント削除結果です。</summary>
 public sealed record UnregisterResult(bool Unregistered);
+
+/// <summary>CLI hook互換のコンテキストです。</summary>
+public sealed record HookContextResult(string? Context, bool ShouldStop, IReadOnlyList<Message> Messages);
+
+/// <summary>認証トークンの設定状態です。</summary>
+public sealed record AuthStatusResult(bool Configured);
+
+/// <summary>認証トークン更新結果です。</summary>
+public sealed record AuthRotationResult(bool Rotated, string NextAction);
 
 /// <summary>AIが回復方法を判断できるツールエラーです。</summary>
 public sealed record ToolError(
