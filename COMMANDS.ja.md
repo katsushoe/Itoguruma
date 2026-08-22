@@ -8,7 +8,7 @@
 
 | コマンド | 必須オプション | 主な任意オプション | 内容 |
 | :--- | :--- | :--- | :--- |
-| `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Agentを登録またはheartbeat更新します。 |
+| `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Agentを登録またはheartbeat更新します。`--type`はProviderです。 |
 | `itoguruma agents` | なし | `--db` | 登録済みAgentを一覧表示します。 |
 | `itoguruma unregister` | `--agent` | `--db` | Agent登録を削除します。既存メッセージから参照されているAgentは削除できません。 |
 | `itoguruma send` | `--from`, 1個以上の`--to`, `--body`, `--thread` | `--reply-to`, `--message-type`, `--payload-json`, `--idempotency-key`, `--db` | メッセージを永続化して配送待ちにします。 |
@@ -59,6 +59,8 @@ itoguruma auth rotate
 | `rotate_auth_token` | `confirmation=ROTATE` | なし | トークン値を返さずに更新します。実行後はサーバーとクライアントの再起動が必要です。 |
 
 `get_version`は、稼働中サーバーの名前と`x.x.x`または`x.x.x.x`形式の製品バージョンを返します。
+
+`agent_type`／`--type`は`codex`、`claude-code`などの送信元Providerです。小文字へ正規化され、ASCII英数字とハイフンだけを許可します。新規メッセージには登録済みProviderが読み取り専用`provider`として自動保存され、送信者は指定・上書きできません。有効なProviderがない送信元は`provider_not_registered`で失敗します。schema version 3以前から移行した既存メッセージは、過去値を推測せず`provider=unknown`として返します。
 
 `send_message`の宛先は、単一宛先なら`recipient`、複数宛先なら`recipients`を使います。`message_type`は`message`、`notification`、`system`、`change_request`のいずれかです。CRは通常メッセージへフォールバックせず、登録済み担当Agentを明示的な宛先に指定します。
 

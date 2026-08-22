@@ -47,6 +47,7 @@ public sealed class MessageMonitoringTests : IDisposable
 
         var message = Assert.Single(snapshot.Messages);
         Assert.Equal("codex", message.RecipientAgentId);
+        Assert.Equal("test", message.Provider);
         Assert.Equal("alpha request", message.Body);
         Assert.Equal(3, snapshot.AgentIds.Count);
     }

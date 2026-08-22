@@ -24,6 +24,7 @@ public sealed partial class MessageDetailsForm : Form
         AddRow("Message ID", message.MessageId);
         AddRow("Thread ID", message.ThreadId);
         AddRow("From", message.SenderAgentId);
+        AddRow("Provider", message.Provider);
         AddRow("To", message.RecipientAgentId);
         AddRow("Type", message.MessageType);
         AddRow("Status", message.DeliveryStatus);

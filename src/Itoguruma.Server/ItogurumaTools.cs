@@ -21,6 +21,7 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         |---|---|---|
         | `sqlite/table/write/reference_key` | A sender, recipient, or reply target does not exist. | Register missing agents or correct the reply target, then retry with the same `idempotency_key`. |
         | `validation/argument` | A parameter value is missing or invalid (e.g. no recipient, unsupported `message_type`, malformed `payload_json`). | Fix the parameter named in the error and retry. |
+        | `validation/provider` | The sender is not registered with a provider. | Register or refresh the sender with its provider, then retry with the same `idempotency_key`. |
         | `validation/change_request` | A CR path, payload field, canonical file field, or status is invalid or inconsistent. | Correct the CR payload or canonical file; do not fall back to a normal message. |
         | `internal` | The operation failed for an unclassified internal reason. | Inspect the error content before retrying. |
         """;
@@ -93,6 +94,15 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
                 "sqlite/table/write/reference_key",
                 "Itoguruma rejected the message because a referenced sender, recipient, or reply target does not exist.",
                 "Register every sender and recipient agent, verify reply_to_message_id when supplied, then retry with the same idempotency_key.",
+                true), isError: true);
+        }
+        catch (ProviderNotRegisteredException exception)
+        {
+            return CreateResult(new ToolError(
+                "provider_not_registered",
+                "validation/provider",
+                exception.Message,
+                "Register or refresh the sender agent with its provider, then retry with the same idempotency_key.",
                 true), isError: true);
         }
         catch (ArgumentException exception)
