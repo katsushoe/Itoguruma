@@ -20,9 +20,9 @@ public sealed class ChangeRequestValidationTests : IDisposable
         await service.RegisterAgentAsync("codex", "test");
 
         var id = await service.SendMessageAsync(new(
-            "buckettie", ["codex"], "CR path notification", "cr-thread",
+            "buckettie", ["codex"], "CR path notification", "cr-thread", "codex",
             MessageType: "change_request", PayloadJson: Payload(path), IdempotencyKey: "cr-1"));
-        await service.SendMessageAsync(new("buckettie", ["codex"], "normal", "normal-thread"));
+        await service.SendMessageAsync(new("buckettie", ["codex"], "normal", "normal-thread", "codex"));
 
         var messages = await service.GetMessagesAsync("codex", messageType: "change_request");
         var message = Assert.Single(messages);
@@ -40,7 +40,7 @@ public sealed class ChangeRequestValidationTests : IDisposable
         await service.RegisterAgentAsync("buckettie", "test");
         await service.RegisterAgentAsync("codex", "test");
         var request = new SendMessageRequest(
-            "buckettie", ["codex"], "CR", "cr-thread", MessageType: "change_request",
+            "buckettie", ["codex"], "CR", "cr-thread", "codex", MessageType: "change_request",
             PayloadJson: Payload(path), IdempotencyKey: "same-cr");
 
         var first = await service.SendMessageAsync(request);
@@ -60,7 +60,7 @@ public sealed class ChangeRequestValidationTests : IDisposable
         {
             var service = await CreateServiceAsync();
             await Assert.ThrowsAsync<ArgumentException>(() => service.SendMessageAsync(new(
-                "buckettie", ["codex"], "CR", "cr-thread", MessageType: "change_request",
+                "buckettie", ["codex"], "CR", "cr-thread", "codex", MessageType: "change_request",
                 PayloadJson: Payload(outside))));
         }
         finally
@@ -90,7 +90,7 @@ public sealed class ChangeRequestValidationTests : IDisposable
         var service = await CreateServiceAsync();
 
         await Assert.ThrowsAsync<ArgumentException>(() => service.SendMessageAsync(new(
-            "buckettie", ["codex"], "CR", "cr-thread", MessageType: "change_request",
+            "buckettie", ["codex"], "CR", "cr-thread", "codex", MessageType: "change_request",
             PayloadJson: JsonSerializer.Serialize(payload))));
     }
 

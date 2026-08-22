@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using Itoguruma.Core;
-using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Itoguruma.Tests;
@@ -32,6 +31,7 @@ public sealed class ProcessIntegrationTests : IDisposable
             {
                 sender_agent_id = "sender",
                 recipient = "recipient",
+                provider = "codex",
                 body = "integration message",
                 thread_id = "integration"
             }),
@@ -48,7 +48,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var messages = StructuredData(result.Output[4]);
         var message = Assert.Single(messages.EnumerateArray());
         Assert.Equal("integration message", message.GetProperty("body").GetString());
-        Assert.Equal("test", message.GetProperty("provider").GetString());
+        Assert.Equal("codex", message.GetProperty("provider").GetString());
         var messageId = message.GetProperty("messageId").GetString();
 
         var acknowledgement = await RunMcpAsync(
@@ -71,11 +71,13 @@ public sealed class ProcessIntegrationTests : IDisposable
             ToolRequest(2, "register_agent", new { agent_id = "recipient", agent_type = "test" }),
             ToolRequest(3, "send_message", new
             {
-                sender_agent_id = "sender", recipient = "recipient", body = "first", thread_id = "history"
+                sender_agent_id = "sender", recipient = "recipient", provider = "codex",
+                body = "first", thread_id = "history"
             }),
             ToolRequest(4, "send_message", new
             {
-                sender_agent_id = "recipient", recipient = "sender", body = "second", thread_id = "history"
+                sender_agent_id = "recipient", recipient = "sender", provider = "claude-code",
+                body = "second", thread_id = "history"
             }),
             ToolRequest(5, "get_conversation_history", new { thread_id = "history" })
         };
@@ -86,8 +88,9 @@ public sealed class ProcessIntegrationTests : IDisposable
         var history = StructuredData(result.Output[4]).EnumerateArray().ToArray();
         Assert.Equal(2, history.Length);
         Assert.Equal("first", history[0].GetProperty("body").GetString());
-        Assert.Equal("test", history[0].GetProperty("provider").GetString());
+        Assert.Equal("codex", history[0].GetProperty("provider").GetString());
         Assert.Equal("second", history[1].GetProperty("body").GetString());
+        Assert.Equal("claude-code", history[1].GetProperty("provider").GetString());
     }
 
     [Fact]
@@ -113,6 +116,7 @@ public sealed class ProcessIntegrationTests : IDisposable
             {
                 sender_agent_id = "sender",
                 recipient = "missing-recipient",
+                provider = "codex",
                 body = "integration message",
                 thread_id = "integration",
                 idempotency_key = "integration-unknown-recipient"
@@ -136,33 +140,26 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task McpServer_WhenSenderProviderIsMissing_ReturnsProviderErrorWithoutPersistingMessage()
+    public async Task McpServer_WhenProviderIsInvalid_ReturnsProviderErrorWithoutPersistingMessage()
     {
         var databasePath = Path.Combine(_directory, "mcp-provider-error.db");
         var store = new SqliteMessageStore(databasePath);
         await store.InitializeAsync();
-        await store.RegisterAgentAsync("sender", "codex");
-        await store.RegisterAgentAsync("recipient", "codex");
-        await using (var connection = new SqliteConnection(
-            new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString()))
-        {
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = "UPDATE agents SET agent_type='' WHERE agent_id='sender'";
-            await command.ExecuteNonQueryAsync();
-        }
+        await store.RegisterAgentAsync("sender", "test");
+        await store.RegisterAgentAsync("recipient", "test");
 
         var result = await RunMcpAsync([
             ToolRequest(1, "send_message", new
             {
-                sender_agent_id = "sender", recipient = "recipient", body = "blocked", thread_id = "provider"
+                sender_agent_id = "sender", recipient = "recipient", provider = "unknown",
+                body = "blocked", thread_id = "provider"
             })], databasePath);
 
         var toolResult = result.Output[0].RootElement.GetProperty("result");
         Assert.True(toolResult.GetProperty("isError").GetBoolean());
         using var errorDocument = JsonDocument.Parse(
             toolResult.GetProperty("content")[0].GetProperty("text").GetString()!);
-        Assert.Equal("provider_not_registered",
+        Assert.Equal("invalid_provider",
             errorDocument.RootElement.GetProperty("errorCode").GetString());
         Assert.Empty(await store.GetConversationHistoryAsync("provider"));
     }
@@ -177,6 +174,7 @@ public sealed class ProcessIntegrationTests : IDisposable
             ToolRequest(2, "send_message", new
             {
                 sender_agent_id = "sender",
+                provider = "codex",
                 body = "integration message",
                 thread_id = "integration"
             })
@@ -213,8 +211,10 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("`validation/argument`", description, StringComparison.Ordinal);
         Assert.Contains("`validation/provider`", description, StringComparison.Ordinal);
         Assert.Contains("`internal`", description, StringComparison.Ordinal);
-        Assert.False(sendMessage.GetProperty("inputSchema").GetProperty("properties")
+        Assert.True(sendMessage.GetProperty("inputSchema").GetProperty("properties")
             .TryGetProperty("provider", out _));
+        Assert.Contains(sendMessage.GetProperty("inputSchema").GetProperty("required").EnumerateArray(),
+            item => item.GetString() == "provider");
 
         var names = tools.EnumerateArray().Select(tool => tool.GetProperty("name").GetString()).ToArray();
         Assert.Contains("get_hook_context", names);
@@ -282,14 +282,14 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.InitializeAsync();
         await service.RegisterAgentAsync("sender", "test");
         await service.RegisterAgentAsync("recipient", "test");
-        await service.SendMessageAsync(new("sender", ["recipient"], "prompt message", "hook"));
+        await service.SendMessageAsync(new("sender", ["recipient"], "prompt message", "hook", "codex"));
 
         var prompt = await RunAsync("itoguruma", ["hook", "--agent", "recipient"], databasePath,
             "{\"hook_event_name\":\"UserPromptSubmit\"}");
 
         Assert.Equal(0, prompt.ExitCode);
         Assert.Contains("prompt message", prompt.StandardOutput, StringComparison.Ordinal);
-        await service.SendMessageAsync(new("sender", ["recipient"], "stop message", "hook"));
+        await service.SendMessageAsync(new("sender", ["recipient"], "stop message", "hook", "codex"));
 
         var stop = await RunAsync("itoguruma", ["hook", "--agent", "recipient", "--lease-seconds", "-1"],
             databasePath, "{\"hook_event_name\":\"Stop\"}");
@@ -312,7 +312,8 @@ public sealed class ProcessIntegrationTests : IDisposable
             RunAsync("itoguruma",
             [
                 "send", "--from", "sender", "--to", "recipient", "--thread", "process-stress",
-                "--body", $"message-{index}", "--idempotency-key", $"process-{index}"
+                "--provider", "codex", "--body", $"message-{index}",
+                "--idempotency-key", $"process-{index}"
             ], databasePath, string.Empty)));
 
         Assert.All(sends, result => Assert.Equal(0, result.ExitCode));
@@ -338,7 +339,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var send = await RunAsync("itoguruma",
         [
             "send", "--from", "sender", "--to", "recipient-a", "--to", "recipient-b",
-            "--thread", "symmetry", "--body", "shared message"
+            "--provider", "codex", "--thread", "symmetry", "--body", "shared message"
         ], databasePath, string.Empty);
         var history = await RunAsync("itoguruma",
             ["history", "--thread", "symmetry"], databasePath, string.Empty);
@@ -348,7 +349,20 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Single(await service.GetMessagesAsync("recipient-a"));
         Assert.Single(await service.GetMessagesAsync("recipient-b"));
         using var document = JsonDocument.Parse(history.StandardOutput);
-        Assert.Equal("shared message", Assert.Single(document.RootElement.EnumerateArray()).GetProperty("body").GetString());
+        var message = Assert.Single(document.RootElement.EnumerateArray());
+        Assert.Equal("shared message", message.GetProperty("body").GetString());
+        Assert.Equal("codex", message.GetProperty("provider").GetString());
+    }
+
+    [Fact]
+    public async Task AgentCli_WhenProviderIsMissing_RejectsSend()
+    {
+        var result = await RunAsync("itoguruma",
+            ["send", "--from", "sender", "--to", "recipient", "--thread", "missing", "--body", "blocked"],
+            Path.Combine(_directory, "cli-provider-missing.db"), string.Empty);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Contains("--provider", result.StandardError, StringComparison.Ordinal);
     }
 
     [Fact]
