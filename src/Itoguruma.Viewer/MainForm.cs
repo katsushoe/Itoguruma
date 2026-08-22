@@ -7,7 +7,6 @@ namespace Itoguruma.Viewer;
 public sealed class MainForm : Form
 {
     private readonly TextBox _databasePath = new() { Dock = DockStyle.Fill };
-    private readonly ComboBox _statusFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110 };
     private readonly ComboBox _typeFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130 };
     private readonly ComboBox _agentFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     private readonly TextBox _searchText = new() { Width = 220 };
@@ -49,8 +48,6 @@ public sealed class MainForm : Form
         _databasePath.Text = databasePath ?? ResolveDefaultDatabasePath();
         _searchText.PlaceholderText = L("Body, thread, or message ID", "本文・thread・message ID");
         _autoRefresh.Text = L("Auto refresh", "自動更新");
-        _statusFilter.Items.AddRange([L("All", "すべて"), "pending", "leased", "acked"]);
-        _statusFilter.SelectedIndex = 0;
         _typeFilter.Items.AddRange([L("All", "すべて"), "message", "notification", "system", "change_request"]);
         _typeFilter.SelectedIndex = 0;
         _agentFilter.Items.Add(L("All", "すべて"));
@@ -92,7 +89,7 @@ public sealed class MainForm : Form
 
         var filters = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new(8, 2, 8, 6), WrapContents = true };
         filters.Controls.AddRange([
-            LabelFor(L("Status", "状態")), _statusFilter, LabelFor(L("Type", "種別")), _typeFilter, LabelFor("Agent"), _agentFilter,
+            LabelFor(L("Type", "種別")), _typeFilter, LabelFor("Agent"), _agentFilter,
             LabelFor(L("Search", "検索")), _searchText, LabelFor(L("Limit", "最大件数")), _limit,
             _autoRefresh, LabelFor(L("Interval (sec)", "間隔(秒)")), _interval, _summary, _state
         ]);
@@ -149,7 +146,7 @@ public sealed class MainForm : Form
         {
             var monitor = new SqliteMessageMonitor(_databasePath.Text.Trim());
             var query = new MessageMonitorQuery(
-                SelectedValue(_statusFilter), SelectedValue(_agentFilter),
+                "pending", SelectedValue(_agentFilter),
                 _searchText.Text, SelectedValue(_typeFilter), decimal.ToInt32(_limit.Value));
             var snapshot = await monitor.LoadAsync(query);
             var currentAgent = _agentFilter.SelectedItem?.ToString();
@@ -162,7 +159,7 @@ public sealed class MainForm : Form
                 : L("All", "すべて");
             _agentFilter.EndUpdate();
             _messages.DataSource = new BindingList<MessageRow>(snapshot.Messages.Select(x => new MessageRow(x)).ToList());
-            _summary.Text = $"pending {snapshot.PendingCount} / leased {snapshot.LeasedCount} / acked {snapshot.AcknowledgedCount}";
+            _summary.Text = L($"Undelivered {snapshot.PendingCount}", $"未配信 {snapshot.PendingCount}件");
             _state.Text = L($"{snapshot.Messages.Count} items  {snapshot.LoadedAt.ToLocalTime():HH:mm:ss}", $"{snapshot.Messages.Count}件  {snapshot.LoadedAt.ToLocalTime():HH:mm:ss}");
             ShowSelectedMessage();
         }
