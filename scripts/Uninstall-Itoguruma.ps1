@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA "Programs\Itoguruma")
+    [string]$InstallDirectory = "C:\Itoguruma"
 )
 
 $ErrorActionPreference = "Stop"
