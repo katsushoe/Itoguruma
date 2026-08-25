@@ -91,6 +91,16 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             ALTER TABLE messages ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown';
             PRAGMA user_version=4;
             """, cancellationToken);
+            if (version < 5) await ApplyAsync(connection, (SqliteTransaction)transaction, """
+            CREATE TABLE projects (
+              project_id TEXT PRIMARY KEY, display_name TEXT NOT NULL,
+              inbox_agent_id TEXT NOT NULL UNIQUE, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+              created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+            CREATE TABLE audit_log (
+              audit_id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL,
+              subject_id TEXT NOT NULL, created_at TEXT NOT NULL);
+            PRAGMA user_version=5;
+            """, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
 
@@ -200,10 +210,12 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             }
             foreach (var recipient in request.Recipients.Distinct(StringComparer.Ordinal))
             {
+                var resolvedRecipient = await ResolveRecipientAsync(
+                    connection, (SqliteTransaction)transaction, recipient, cancellationToken);
                 await using var delivery = connection.CreateCommand();
                 delivery.Transaction = (SqliteTransaction)transaction;
                 delivery.CommandText = "INSERT INTO message_deliveries(message_id,recipient_agent_id,status) VALUES($id,$recipient,'pending')";
-                Add(delivery, "$id", messageId); Add(delivery, "$recipient", recipient);
+                Add(delivery, "$id", messageId); Add(delivery, "$recipient", resolvedRecipient);
                 await delivery.ExecuteNonQueryAsync(cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);
@@ -289,6 +301,142 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         Add(command, "$now", now); Add(command, "$message", messageId); Add(command, "$agent", agentId);
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
+
+    public async Task<Project> AddProjectAsync(ProjectMutation mutation, CancellationToken cancellationToken = default)
+    {
+        ValidateMutation(mutation, true);
+        var now = Format(Now());
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = """
+            INSERT INTO projects(project_id,display_name,inbox_agent_id,enabled,created_at,updated_at)
+            VALUES($id,$name,$inbox,1,$now,$now);
+            """;
+        Add(command, "$id", mutation.ProjectId); Add(command, "$name", mutation.DisplayName ?? mutation.ProjectId);
+        Add(command, "$inbox", mutation.InboxAgentId); Add(command, "$now", now);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await AuditAsync(connection, (SqliteTransaction)transaction, "project_added", mutation.ProjectId, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return (await GetProjectAsync(mutation.ProjectId, cancellationToken))!;
+    }
+
+    public async Task<Project> UpdateProjectAsync(ProjectMutation mutation, CancellationToken cancellationToken = default)
+    {
+        ValidateMutation(mutation, false);
+        var now = Format(Now());
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var command = connection.CreateCommand(); command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = """
+            UPDATE projects SET display_name=COALESCE($name,display_name),
+              inbox_agent_id=COALESCE($inbox,inbox_agent_id),updated_at=$now WHERE project_id=$id;
+            """;
+        Add(command, "$id", mutation.ProjectId); Add(command, "$name", mutation.DisplayName);
+        Add(command, "$inbox", mutation.InboxAgentId); Add(command, "$now", now);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
+            throw new ProjectOperationException(ProjectErrorCodes.UnknownProject, "Unknown project.");
+        await AuditAsync(connection, (SqliteTransaction)transaction, "project_updated", mutation.ProjectId, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return (await GetProjectAsync(mutation.ProjectId, cancellationToken))!;
+    }
+
+    public async Task<Project> SetProjectEnabledAsync(string projectId, bool enabled, CancellationToken cancellationToken = default)
+    {
+        RequireText(projectId, nameof(projectId)); var now = Format(Now());
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var command = connection.CreateCommand(); command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "UPDATE projects SET enabled=$enabled,updated_at=$now WHERE project_id=$id";
+        Add(command, "$enabled", enabled ? 1 : 0); Add(command, "$now", now); Add(command, "$id", projectId);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
+            throw new ProjectOperationException(ProjectErrorCodes.UnknownProject, "Unknown project.");
+        await AuditAsync(connection, (SqliteTransaction)transaction, enabled ? "project_enabled" : "project_disabled", projectId, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return (await GetProjectAsync(projectId, cancellationToken))!;
+    }
+
+    public async Task<bool> DeleteProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        RequireText(projectId, nameof(projectId)); var now = Format(Now());
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var referenced = connection.CreateCommand(); referenced.Transaction = (SqliteTransaction)transaction;
+        referenced.CommandText = """
+            SELECT EXISTS(SELECT 1 FROM projects p JOIN agents a ON a.agent_id=p.inbox_agent_id
+              JOIN message_deliveries d ON d.recipient_agent_id=a.agent_id WHERE p.project_id=$id);
+            """;
+        Add(referenced, "$id", projectId);
+        if (Convert.ToInt32(await referenced.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture) != 0)
+            throw new ProjectOperationException(ProjectErrorCodes.ProjectReferenced, "Project is referenced by delivery history; disable it instead.");
+        await using var command = connection.CreateCommand(); command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText = "DELETE FROM projects WHERE project_id=$id"; Add(command, "$id", projectId);
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        if (deleted) await AuditAsync(connection, (SqliteTransaction)transaction, "project_deleted", projectId, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken); return deleted;
+    }
+
+    public async Task<IReadOnlyList<Project>> ListProjectsAsync(CancellationToken cancellationToken = default)
+    {
+        var result = new List<Project>(); await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand(); command.CommandText = "SELECT project_id,display_name,inbox_agent_id,enabled,created_at,updated_at FROM projects ORDER BY project_id";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) result.Add(ReadProject(reader)); return result;
+    }
+
+    public async Task<Project?> GetProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        RequireText(projectId, nameof(projectId)); await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand(); command.CommandText = "SELECT project_id,display_name,inbox_agent_id,enabled,created_at,updated_at FROM projects WHERE project_id=$id";
+        Add(command, "$id", projectId); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadProject(reader) : null;
+    }
+
+    private async Task<string> ResolveRecipientAsync(SqliteConnection connection, SqliteTransaction transaction,
+        string recipient, CancellationToken cancellationToken)
+    {
+        await using var agent = connection.CreateCommand(); agent.Transaction = transaction;
+        agent.CommandText = "SELECT agent_id FROM agents WHERE agent_id=$id"; Add(agent, "$id", recipient);
+        if (await agent.ExecuteScalarAsync(cancellationToken) is string existing) return existing;
+        await using var project = connection.CreateCommand(); project.Transaction = transaction;
+        project.CommandText = "SELECT inbox_agent_id,enabled FROM projects WHERE project_id=$id"; Add(project, "$id", recipient);
+        await using var reader = await project.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new ProjectOperationException(ProjectErrorCodes.UnknownProject, "Unknown project or agent recipient.");
+        if (reader.GetInt32(1) == 0)
+            throw new ProjectOperationException(ProjectErrorCodes.DisabledProject, "Project recipient is disabled.");
+        var inbox = reader.GetString(0); await reader.DisposeAsync();
+        await using var register = connection.CreateCommand(); register.Transaction = transaction;
+        register.CommandText = """
+            INSERT OR IGNORE INTO agents(agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json)
+            VALUES($id,$id,'project_inbox',NULL,$now,$now,NULL);
+            """;
+        Add(register, "$id", inbox); Add(register, "$now", Format(Now()));
+        if (await register.ExecuteNonQueryAsync(cancellationToken) == 1)
+            await AuditAsync(connection, transaction, "project_inbox_registered", recipient, Format(Now()), cancellationToken);
+        return inbox;
+    }
+
+    private static async Task AuditAsync(SqliteConnection connection, SqliteTransaction transaction,
+        string eventType, string subjectId, string now, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "INSERT INTO audit_log(event_type,subject_id,created_at) VALUES($event,$subject,$now)";
+        Add(command, "$event", eventType); Add(command, "$subject", subjectId); Add(command, "$now", now);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static void ValidateMutation(ProjectMutation mutation, bool requireInbox)
+    {
+        RequireText(mutation.ProjectId, nameof(mutation.ProjectId));
+        if (requireInbox) RequireText(mutation.InboxAgentId ?? string.Empty, nameof(mutation.InboxAgentId));
+        if (mutation.DisplayName is not null) RequireText(mutation.DisplayName, nameof(mutation.DisplayName));
+        if (mutation.InboxAgentId is not null) RequireText(mutation.InboxAgentId, nameof(mutation.InboxAgentId));
+    }
+
+    private static Project ReadProject(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1),
+        reader.GetString(2), reader.GetInt32(3) != 0, Parse(reader.GetString(4)), Parse(reader.GetString(5)));
 
     private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
     {
