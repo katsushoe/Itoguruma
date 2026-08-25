@@ -17,7 +17,7 @@ codex mcp add itoguruma --url "http://127.0.0.1:47631/mcp" --bearer-token-env-va
 ## Claude Code
 
 ```powershell
-claude mcp add --transport http --scope user --header "Authorization: Bearer $env:ITOGURUMA_AUTH_TOKEN" itoguruma "http://127.0.0.1:47631/mcp"
+claude mcp add --transport http --scope user --header 'Authorization: Bearer ${ITOGURUMA_AUTH_TOKEN}' itoguruma "http://127.0.0.1:47631/mcp"
 ```
 
 `examples/claude-settings.json`を対象プロジェクトの既存設定へ統合します。

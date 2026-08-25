@@ -376,6 +376,24 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Installer_WhenConfiguringClaude_UsesEnvironmentTokenAndFallbackPaths()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
+
+        Assert.Contains("Authorization: Bearer ${ITOGURUMA_AUTH_TOKEN}", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("Authorization: Bearer $authenticationToken", installer, StringComparison.Ordinal);
+        Assert.Contains("npm\\claude.cmd", installer, StringComparison.Ordinal);
+        Assert.Contains(".local\\bin\\claude.exe", installer, StringComparison.Ordinal);
+
+        foreach (var document in new[] { "MCP_SETUP.md", "MCP_SETUP.ja.md" })
+        {
+            var content = File.ReadAllText(Path.Combine(repositoryRoot, document));
+            Assert.Contains("Authorization: Bearer ${ITOGURUMA_AUTH_TOKEN}", content, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public async Task McpServer_WhenDatabaseIsAlreadyInUse_SecondProcessExits()
     {
         var databasePath = Path.Combine(_directory, "single-instance.db");
