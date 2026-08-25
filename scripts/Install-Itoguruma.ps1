@@ -49,6 +49,21 @@ function Invoke-ClientCommand {
     }
 }
 
+function Find-ClientCommand {
+    param([string]$Name, [string[]]$CandidatePaths)
+
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($null -ne $command) { return $command }
+
+    foreach ($candidatePath in $CandidatePaths) {
+        if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+            return Get-Command $candidatePath -ErrorAction Stop
+        }
+    }
+
+    return $null
+}
+
 function Invoke-DownloadFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -279,7 +294,10 @@ try {
         }
     }
     if (!$SkipClaude) {
-        $claude = Get-Command claude -ErrorAction SilentlyContinue
+        $claude = Find-ClientCommand "claude" @(
+            (Join-Path $env:APPDATA "npm\claude.cmd"),
+            (Join-Path $env:USERPROFILE ".local\bin\claude.exe")
+        )
         if ($null -ne $claude) {
             $previousErrorActionPreference = $ErrorActionPreference
             try {
@@ -291,7 +309,7 @@ try {
             }
             Invoke-ClientCommand $claude @(
                 "mcp", "add", "--transport", "http", "--scope", "user",
-                "itoguruma", $mcpUrl, "--header", "Authorization: Bearer $authenticationToken")
+                "itoguruma", $mcpUrl, "--header", 'Authorization: Bearer ${ITOGURUMA_AUTH_TOKEN}')
         }
     }
 
