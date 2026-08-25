@@ -6,7 +6,14 @@ namespace Itoguruma.Viewer;
 
 public sealed class MainForm : Form
 {
-    private readonly TextBox _databasePath = new() { Dock = DockStyle.Fill };
+    private readonly TextBox _databasePath = new()
+    {
+        Dock = DockStyle.Fill,
+        ReadOnly = true,
+        BackColor = SystemColors.Control,
+        BorderStyle = BorderStyle.FixedSingle,
+        TabStop = false
+    };
     private readonly ComboBox _typeFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130 };
     private readonly ComboBox _agentFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
     private readonly TextBox _searchText = new() { Width = 220 };
@@ -36,6 +43,7 @@ public sealed class MainForm : Form
         WordWrap = false
     };
     private readonly System.Windows.Forms.Timer _timer = new();
+    private IReadOnlyList<MonitoredMessage> _displayedMessages = [];
     private bool _refreshing;
 
     public MainForm(string? databasePath)
@@ -141,7 +149,6 @@ public sealed class MainForm : Form
     {
         if (_refreshing) return;
         _refreshing = true;
-        _state.Text = L("Loading...", "読込中...");
         try
         {
             var monitor = new SqliteMessageMonitor(_databasePath.Text.Trim());
@@ -149,19 +156,10 @@ public sealed class MainForm : Form
                 "pending", SelectedValue(_agentFilter),
                 _searchText.Text, SelectedValue(_typeFilter), decimal.ToInt32(_limit.Value));
             var snapshot = await monitor.LoadAsync(query);
-            var currentAgent = _agentFilter.SelectedItem?.ToString();
-            _agentFilter.BeginUpdate();
-            _agentFilter.Items.Clear();
-            _agentFilter.Items.Add(L("All", "すべて"));
-            foreach (var agent in snapshot.AgentIds) _agentFilter.Items.Add(agent);
-            _agentFilter.SelectedItem = currentAgent is not null && _agentFilter.Items.Contains(currentAgent)
-                ? currentAgent
-                : L("All", "すべて");
-            _agentFilter.EndUpdate();
-            _messages.DataSource = new BindingList<MessageRow>(snapshot.Messages.Select(x => new MessageRow(x)).ToList());
-            _summary.Text = L($"Undelivered {snapshot.PendingCount}", $"未配信 {snapshot.PendingCount}件");
-            _state.Text = L($"{snapshot.Messages.Count} items  {snapshot.LoadedAt.ToLocalTime():HH:mm:ss}", $"{snapshot.Messages.Count}件  {snapshot.LoadedAt.ToLocalTime():HH:mm:ss}");
-            ShowSelectedMessage();
+            UpdateAgentFilter(snapshot.AgentIds);
+            UpdateMessages(snapshot.Messages);
+            SetText(_summary, L($"Undelivered {snapshot.PendingCount}", $"未配信 {snapshot.PendingCount}件"));
+            SetText(_state, L($"{snapshot.Messages.Count} items", $"{snapshot.Messages.Count}件"));
         }
         catch (Exception ex)
         {
@@ -172,6 +170,56 @@ public sealed class MainForm : Form
         {
             _refreshing = false;
         }
+    }
+
+    private void UpdateAgentFilter(IReadOnlyList<string> agentIds)
+    {
+        var all = L("All", "すべて");
+        var items = new[] { all }.Concat(agentIds).ToArray();
+        var currentItems = _agentFilter.Items.Cast<object>().Select(x => x.ToString() ?? string.Empty);
+        if (currentItems.SequenceEqual(items, StringComparer.Ordinal)) return;
+
+        var selected = _agentFilter.SelectedItem?.ToString();
+        _agentFilter.BeginUpdate();
+        try
+        {
+            _agentFilter.Items.Clear();
+            _agentFilter.Items.AddRange(items);
+            _agentFilter.SelectedItem = selected is not null && _agentFilter.Items.Contains(selected) ? selected : all;
+        }
+        finally
+        {
+            _agentFilter.EndUpdate();
+        }
+    }
+
+    private void UpdateMessages(IReadOnlyList<MonitoredMessage> messages)
+    {
+        if (_displayedMessages.SequenceEqual(messages)) return;
+
+        var selected = (_messages.CurrentRow?.DataBoundItem as MessageRow)?.Source;
+        var firstDisplayedIndex = _messages.FirstDisplayedScrollingRowIndex;
+        _displayedMessages = messages.ToArray();
+        _messages.DataSource = new BindingList<MessageRow>(_displayedMessages.Select(x => new MessageRow(x)).ToList());
+
+        if (selected is not null)
+        {
+            var row = _messages.Rows.Cast<DataGridViewRow>().FirstOrDefault(x =>
+                x.DataBoundItem is MessageRow item &&
+                item.Source.MessageId == selected.MessageId &&
+                item.Source.RecipientAgentId == selected.RecipientAgentId);
+            if (row is not null) _messages.CurrentCell = row.Cells[0];
+        }
+        if (firstDisplayedIndex >= 0 && firstDisplayedIndex < _messages.RowCount)
+        {
+            _messages.FirstDisplayedScrollingRowIndex = firstDisplayedIndex;
+        }
+        ShowSelectedMessage();
+    }
+
+    private static void SetText(Control control, string text)
+    {
+        if (!string.Equals(control.Text, text, StringComparison.Ordinal)) control.Text = text;
     }
 
     private void BrowseDatabase()
