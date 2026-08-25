@@ -223,6 +223,42 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpServer_WhenInitializedAndPromptRequested_DescribesPurposeAndWorkflow()
+    {
+        var requests = new[]
+        {
+            Request(1, "initialize", new
+            {
+                protocolVersion = "2025-11-25",
+                capabilities = new { },
+                clientInfo = new { name = "itoguruma-tests", version = "1.0" }
+            }),
+            Request(2, "prompts/list", new { }),
+            Request(3, "prompts/get", new { name = "itoguruma_guide" })
+        };
+
+        var result = await RunMcpAsync(requests, Path.Combine(_directory, "mcp-prompts.db"));
+
+        Assert.Equal(0, result.ExitCode);
+        var instructions = result.Output[0].RootElement.GetProperty("result").GetProperty("instructions").GetString();
+        Assert.Contains("message relay", instructions, StringComparison.Ordinal);
+        Assert.Contains("ack_message", instructions, StringComparison.Ordinal);
+        Assert.Contains("change requests", instructions, StringComparison.Ordinal);
+
+        var prompts = result.Output[1].RootElement.GetProperty("result").GetProperty("prompts");
+        var guide = prompts.EnumerateArray().Single(prompt =>
+            prompt.GetProperty("name").GetString() == "itoguruma_guide");
+        Assert.Contains("standard agent-to-agent messaging workflow", guide.GetProperty("description").GetString(),
+            StringComparison.Ordinal);
+
+        var messages = result.Output[2].RootElement.GetProperty("result").GetProperty("messages");
+        var text = messages[0].GetProperty("content").GetProperty("text").GetString();
+        Assert.Contains("register_agent", text, StringComparison.Ordinal);
+        Assert.Contains("idempotency_key", text, StringComparison.Ordinal);
+        Assert.Contains("message_type=change_request", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task McpServer_WhenVersionIsRequested_ReturnsRunningProductVersion()
     {
         var result = await RunMcpAsync(
