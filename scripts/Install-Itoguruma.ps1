@@ -2,7 +2,7 @@
 param(
     [string]$Version = "latest",
     [string]$PackagePath = "",
-    [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA "Programs\Itoguruma"),
+    [string]$InstallDirectory = "C:\Itoguruma",
     [string]$ConfigDirectory = "",
     [string]$LogDirectory = "",
     [ValidateSet("", "en", "ja")]
@@ -142,6 +142,7 @@ try {
         "bin\server\Itoguruma.Server.exe",
         "bin\itoguruma\itoguruma.exe",
         "bin\viewer\itoguruma-viewer.exe",
+        "bin\database-migrator\itoguruma-database-migrator.exe",
         "bin\stop-codex\stop-codex.exe",
         "bin\stop-claude\stop-claude.exe",
         "examples\claude-settings.json",
@@ -209,6 +210,17 @@ try {
     [System.IO.File]::WriteAllText($settingsPath, $settingsJson, (New-Object System.Text.UTF8Encoding($false)))
     $dataRoot = Join-Path $destinationRoot "data"
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
+    $databasePath = Join-Path $dataRoot "messages.db"
+    $legacyRoot = Join-Path $env:LOCALAPPDATA "Programs\Itoguruma"
+    $legacyDatabasePath = Join-Path $legacyRoot "data\messages.db"
+    if (![System.IO.Path]::GetFullPath($legacyRoot).Equals($destinationRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
+        (Test-Path -LiteralPath $legacyDatabasePath -PathType Leaf)) {
+        $migratorPath = Join-Path $destinationRoot "bin\database-migrator\itoguruma-database-migrator.exe"
+        & $migratorPath --destination $databasePath --source $legacyDatabasePath --backup-directory (Join-Path $dataRoot "migration-backups")
+        if ($LASTEXITCODE -ne 0) {
+            throw "Database migration failed with exit code $LASTEXITCODE."
+        }
+    }
 
     $cliDirectory = Join-Path $destinationRoot "bin\itoguruma"
     $stopCodexDirectory = Join-Path $destinationRoot "bin\stop-codex"
@@ -238,7 +250,6 @@ try {
     }
 
     $serverPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
-    $databasePath = Join-Path $dataRoot "messages.db"
     $mcpUrl = $ServerUrl.TrimEnd("/") + "/mcp"
     $authenticationToken = [Environment]::GetEnvironmentVariable("ITOGURUMA_AUTH_TOKEN", "User")
     if ([string]::IsNullOrWhiteSpace($authenticationToken)) {

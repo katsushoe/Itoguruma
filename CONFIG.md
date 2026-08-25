@@ -8,7 +8,7 @@ The installer stores `Itoguruma.Language` in `config/appsettings.json`. Supporte
 
 ## Resolution and locations
 
-Environment variables override `src/Itoguruma.Server/appsettings.json`. Installer-generated runtime files are stored below `%LOCALAPPDATA%\Programs\Itoguruma` unless another installation directory is selected.
+Environment variables override `src/Itoguruma.Server/appsettings.json`. Installer-generated runtime files are stored below `C:\Itoguruma` unless another installation directory is selected.
 
 ## Settings
 
@@ -27,5 +27,5 @@ Environment variables override `src/Itoguruma.Server/appsettings.json`. Installe
 ```powershell
 $env:ITOGURUMA_AUTH_TOKEN = "<random-secret>"
 $env:ITOGURUMA_URL = "http://127.0.0.1:47631"
-$env:ITOGURUMA_DB = "$env:LOCALAPPDATA\Programs\Itoguruma\data\messages.db"
+$env:ITOGURUMA_DB = "C:\Itoguruma\data\messages.db"
 ```

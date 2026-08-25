@@ -38,6 +38,7 @@ $payloadRoot = Join-Path $releaseRoot "files"
 $serverRoot = Join-Path $payloadRoot "bin\server"
 $cliRoot = Join-Path $payloadRoot "bin\itoguruma"
 $viewerRoot = Join-Path $payloadRoot "bin\viewer"
+$migratorRoot = Join-Path $payloadRoot "bin\database-migrator"
 $stopCodexRoot = Join-Path $payloadRoot "bin\stop-codex"
 $stopClaudeRoot = Join-Path $payloadRoot "bin\stop-claude"
 $zipPath = Join-Path $releaseRoot ("Itoguruma-" + $normalizedVersion + "-win-x64.zip")
@@ -52,7 +53,7 @@ if (Test-Path -LiteralPath $releaseRoot) {
     Remove-Item -LiteralPath $releaseRoot -Recurse -Force
 }
 
-New-Item -ItemType Directory -Force -Path $serverRoot, $cliRoot, $viewerRoot, $stopCodexRoot, $stopClaudeRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $serverRoot, $cliRoot, $viewerRoot, $migratorRoot, $stopCodexRoot, $stopClaudeRoot | Out-Null
 $publishArguments = @(
     "-c", $Configuration,
     "-r", "win-x64",
@@ -67,6 +68,7 @@ $publishArguments = @(
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Server\Itoguruma.Server.csproj")) + $publishArguments + @("-o", $serverRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Cli\Itoguruma.Cli.csproj")) + $publishArguments + @("-o", $cliRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Viewer\Itoguruma.Viewer.csproj")) + $publishArguments + @("-o", $viewerRoot))
+Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.DatabaseMigrator\Itoguruma.DatabaseMigrator.csproj")) + $publishArguments + @("-o", $migratorRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.StopCodex\Itoguruma.StopCodex.csproj")) + $publishArguments + @("-o", $stopCodexRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.StopClaude\Itoguruma.StopClaude.csproj")) + $publishArguments + @("-o", $stopClaudeRoot))
 
