@@ -76,9 +76,11 @@ builder.Services
     .AddMcpServer(options =>
     {
         options.ServerInfo = new() { Name = "itoguruma", Version = ProductInfo.Version };
+        options.ServerInstructions = ItogurumaPrompts.ServerInstructions;
     })
     .WithHttpTransport(options => options.Stateless = true)
-    .WithTools<ItogurumaTools>();
+    .WithTools<ItogurumaTools>()
+    .WithPrompts<ItogurumaPrompts>();
 
 var app = builder.Build();
 app.Logger.LogInformation(AppLocalization.Text("[Startup] Itoguruma server starting at {ServerUrl}", "[起動] Itogurumaサーバーを開始します: {ServerUrl}"), serverUrl);
