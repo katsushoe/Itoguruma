@@ -17,7 +17,7 @@ The installer generates `examples/codex-hooks.json`. Merge its lifecycle entries
 ## Claude Code
 
 ```powershell
-claude mcp add --transport http --scope user --header "Authorization: Bearer $env:ITOGURUMA_AUTH_TOKEN" itoguruma "http://127.0.0.1:47631/mcp"
+claude mcp add --transport http --scope user --header 'Authorization: Bearer ${ITOGURUMA_AUTH_TOKEN}' itoguruma "http://127.0.0.1:47631/mcp"
 ```
 
 Merge `examples/claude-settings.json` into the target project's existing settings.
