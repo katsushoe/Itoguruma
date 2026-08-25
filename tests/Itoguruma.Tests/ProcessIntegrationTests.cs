@@ -132,9 +132,9 @@ public sealed class ProcessIntegrationTests : IDisposable
         using var errorDocument = JsonDocument.Parse(
             toolResult.GetProperty("content")[0].GetProperty("text").GetString()!);
         var data = errorDocument.RootElement;
-        Assert.Equal("reference_not_found", data.GetProperty("errorCode").GetString());
-        Assert.Equal("sqlite/table/write/reference_key", data.GetProperty("category").GetString());
-        Assert.Contains("Register every sender and recipient agent",
+        Assert.Equal(ProjectErrorCodes.UnknownProject, data.GetProperty("errorCode").GetString());
+        Assert.Equal("validation/project_recipient", data.GetProperty("category").GetString());
+        Assert.Contains("interactive Itoguruma CLI",
             data.GetProperty("suggestedAction").GetString(), StringComparison.Ordinal);
         Assert.True(data.GetProperty("retryable").GetBoolean());
     }

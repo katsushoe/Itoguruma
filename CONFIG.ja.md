@@ -8,7 +8,7 @@
 
 ## 解決順と配置
 
-環境変数は`src/Itoguruma.Server/appsettings.json`より優先されます。インストーラが生成する実行時ファイルは、別のインストール先を指定しない限り`%LOCALAPPDATA%\Programs\Itoguruma`配下に保存されます。
+環境変数は`src/Itoguruma.Server/appsettings.json`より優先されます。インストーラが生成する実行時ファイルは、別のインストール先を指定しない限り`C:\Itoguruma`配下に保存されます。
 
 ## 設定項目
 
@@ -27,5 +27,5 @@
 ```powershell
 $env:ITOGURUMA_AUTH_TOKEN = "<random-secret>"
 $env:ITOGURUMA_URL = "http://127.0.0.1:47631"
-$env:ITOGURUMA_DB = "$env:LOCALAPPDATA\Programs\Itoguruma\data\messages.db"
+$env:ITOGURUMA_DB = "C:\Itoguruma\data\messages.db"
 ```

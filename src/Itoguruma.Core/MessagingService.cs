@@ -54,6 +54,19 @@ public sealed class MessagingService(IMessageStore store, ChangeRequestValidator
         int offset = 0, CancellationToken cancellationToken = default) =>
         store.GetConversationHistoryAsync(threadId, limit, offset, cancellationToken);
 
+    public Task<Project> AddProjectAsync(ProjectMutation mutation, CancellationToken cancellationToken = default) =>
+        store.AddProjectAsync(mutation, cancellationToken);
+    public Task<Project> UpdateProjectAsync(ProjectMutation mutation, CancellationToken cancellationToken = default) =>
+        store.UpdateProjectAsync(mutation, cancellationToken);
+    public Task<Project> SetProjectEnabledAsync(string projectId, bool enabled, CancellationToken cancellationToken = default) =>
+        store.SetProjectEnabledAsync(projectId, enabled, cancellationToken);
+    public Task<bool> DeleteProjectAsync(string projectId, CancellationToken cancellationToken = default) =>
+        store.DeleteProjectAsync(projectId, cancellationToken);
+    public Task<IReadOnlyList<Project>> ListProjectsAsync(CancellationToken cancellationToken = default) =>
+        store.ListProjectsAsync(cancellationToken);
+    public Task<Project?> GetProjectAsync(string projectId, CancellationToken cancellationToken = default) =>
+        store.GetProjectAsync(projectId, cancellationToken);
+
     private static void ValidateJson(string? value, string name)
     {
         if (value is null) return;

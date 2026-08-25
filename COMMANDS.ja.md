@@ -19,6 +19,10 @@
 | `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Claude Code／Codex Hook入力を読み、InboxをHook出力へ追加します。 |
 | `itoguruma auth status` | なし | なし | 値を表示せず、ユーザー認証トークンの設定有無を表示します。 |
 | `itoguruma auth rotate` | なし | なし | 明示確認後に32バイトの暗号学的乱数でユーザー認証トークンをローテーションします。 |
+| `itoguruma project add <project-id>` | `--inbox-agent`、対話確認 | `--display-name`、`--db` | 有効な既知プロジェクトを追加します。 |
+| `itoguruma project update <project-id>` | 対話確認 | `--inbox-agent`、`--display-name`、`--db` | 既知プロジェクトを更新します。 |
+| `itoguruma project enable|disable|delete <project-id>` | 対話確認 | `--db` | 有効化、無効化、未参照プロジェクトの削除を行います。 |
+| `itoguruma project list|show [project-id]` | `show`のみプロジェクトID | `--db` | 正本のプロジェクト一覧または詳細を参照します。 |
 | `itoguruma version` | なし | なし | 製品バージョンを`x.x.x`または`x.x.x.x`形式で表示します。 |
 | `itoguruma --help` | なし | なし | CLI概要を表示します。 |
 
@@ -64,6 +68,8 @@ itoguruma auth rotate
 
 `send_message`の宛先は、単一宛先なら`recipient`、複数宛先なら`recipients`を使います。`message_type`は`message`、`notification`、`system`、`change_request`のいずれかです。CRは通常メッセージへフォールバックせず、登録済み担当Agentを明示的な宛先に指定します。
 
+未登録Agentの宛先が有効な`project_id`と一致する場合、`send`／`send_message`はトランザクション内で`project_inbox` Agentを作成し、設定済み受信箱へ配送します。未知プロジェクトは`ITG_PROJECT_UNKNOWN`、無効プロジェクトは`ITG_PROJECT_DISABLED`を返します。プロジェクト変更はMCPから実行できず、実コンソールで5桁コードを60秒以内、最大3回で再入力する必要があります。入出力リダイレクトや回避オプションは認めません。参照済みプロジェクトの削除は`ITG_PROJECT_REFERENCED`となるため、`disable`を使用します。
+
 ## インストーラオプション
 
 ```powershell
@@ -73,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1 [-Version <vers
 | オプション | 内容 |
 | :--- | :--- |
 | `-Version` | `latest`または取得するReleaseバージョンを指定します。既定は`latest`です。 |
-| `-InstallDirectory` | インストール先を指定します。既定は`%LOCALAPPDATA%\Programs\Itoguruma`です。 |
+| `-InstallDirectory` | インストール先を指定します。既定は`C:\Itoguruma`です。 |
 | `-ServerUrl` | 常駐MCPサーバーの待受URLを指定します。既定は`http://127.0.0.1:47631`です。 |
 | `-NoPath` | `itoguruma`、`stop-codex`、`stop-claude`のユーザーPATH登録を省略します。 |
 | `-SkipCodex` | CodexへのMCP登録を省略します。 |

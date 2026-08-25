@@ -31,6 +31,7 @@ var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new Chan
 var service = new MessagingService(new SqliteMessageStore(db), changeRequestValidator); await service.InitializeAsync();
 try
 {
+    if (arguments[0] == "project") return await RunProjectAsync(service);
     if (arguments[0] == "hook") return await RunHookAsync(service, Required("--agent"));
     object result = arguments[0] switch
     {
@@ -60,7 +61,34 @@ IReadOnlyList<string> RequiredMany(string name)
         : throw new ArgumentException(AppLocalization.Text($"Missing option: {name}", $"必須オプションがありません: {name}"));
 }
 int Number(string name,int fallback) => int.TryParse(Option(name),out var value) ? value : fallback;
-static int Usage() { Console.WriteLine(AppLocalization.Text("itoguruma register|agents|unregister|send|inbox|ack|history|inspect-change-request|hook|auth|version [options]\nSet ITOGURUMA_DB or pass --db <path>.", "itoguruma register|agents|unregister|send|inbox|ack|history|inspect-change-request|hook|auth|version [options]\nITOGURUMA_DBを設定するか、--db <path>を指定してください。")); return 0; }
+static int Usage() { Console.WriteLine(AppLocalization.Text("itoguruma register|agents|unregister|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\nSet ITOGURUMA_DB or pass --db <path>.", "itoguruma register|agents|unregister|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\nITOGURUMA_DBを設定するか、--db <path>を指定してください。")); return 0; }
+
+async Task<int> RunProjectAsync(MessagingService messagingService)
+{
+    if (arguments.Count < 2) throw new ArgumentException("Missing project operation.");
+    var operation = arguments[1];
+    var projectId = arguments.Count > 2 ? arguments[2] : null;
+    object result;
+    if (operation is "list") result = await messagingService.ListProjectsAsync();
+    else if (operation is "show") result = await messagingService.GetProjectAsync(projectId ?? throw new ArgumentException("Missing project-id."))
+        ?? throw new ProjectOperationException(ProjectErrorCodes.UnknownProject, $"{ProjectErrorCodes.UnknownProject}: Unknown project.");
+    else
+    {
+        new HumanConfirmation(new SystemHumanConfirmationConsole()).Require();
+        var id = projectId ?? throw new ArgumentException("Missing project-id.");
+        result = operation switch
+        {
+            "add" => await messagingService.AddProjectAsync(new(id, Option("--display-name"), Required("--inbox-agent"))),
+            "update" => await messagingService.UpdateProjectAsync(new(id, Option("--display-name"), Option("--inbox-agent"))),
+            "enable" => await messagingService.SetProjectEnabledAsync(id, true),
+            "disable" => await messagingService.SetProjectEnabledAsync(id, false),
+            "delete" => new { deleted = await messagingService.DeleteProjectAsync(id) },
+            _ => throw new ArgumentException($"Unknown project operation: {operation}")
+        };
+    }
+    Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+    return 0;
+}
 
 async Task<int> RunHookAsync(MessagingService messagingService, string agentId)
 {

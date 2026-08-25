@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../../src/Itoguruma.Cli/AuthCommand.cs" Link="Cli/AuthCommand.cs" />
+    <Compile Include="../../src/Itoguruma.Cli/HumanConfirmation.cs" Link="Cli/HumanConfirmation.cs" />
     <Compile Include="../../src/Itoguruma.StopClaude/ClaudeProcessMatcher.cs" Link="StopClaude/ClaudeProcessMatcher.cs" />
     <Compile Include="../../src/Itoguruma.StopClaude/ProcessInfo.cs" Link="StopClaude/ProcessInfo.cs" />
   </ItemGroup>

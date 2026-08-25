@@ -14,4 +14,10 @@ public interface IMessageStore
     Task<bool> AckMessageAsync(string agentId, string messageId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ConversationMessage>> GetConversationHistoryAsync(string threadId, int limit = 100,
         int offset = 0, CancellationToken cancellationToken = default);
+    Task<Project> AddProjectAsync(ProjectMutation mutation, CancellationToken cancellationToken = default);
+    Task<Project> UpdateProjectAsync(ProjectMutation mutation, CancellationToken cancellationToken = default);
+    Task<Project> SetProjectEnabledAsync(string projectId, bool enabled, CancellationToken cancellationToken = default);
+    Task<bool> DeleteProjectAsync(string projectId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Project>> ListProjectsAsync(CancellationToken cancellationToken = default);
+    Task<Project?> GetProjectAsync(string projectId, CancellationToken cancellationToken = default);
 }
