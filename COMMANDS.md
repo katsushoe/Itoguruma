@@ -19,6 +19,10 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Converts inbox messages to lifecycle-hook output. |
 | `itoguruma auth status` | None | None | Reports token presence without revealing it. |
 | `itoguruma auth rotate` | Confirmation | None | Replaces the user token with 32 random bytes. |
+| `itoguruma project add <project-id>` | `--inbox-agent` and interactive confirmation | `--display-name`, `--db` | Adds an enabled known project. |
+| `itoguruma project update <project-id>` | Interactive confirmation | `--inbox-agent`, `--display-name`, `--db` | Updates a known project. |
+| `itoguruma project enable|disable|delete <project-id>` | Interactive confirmation | `--db` | Changes availability or deletes an unreferenced project. |
+| `itoguruma project list|show [project-id]` | Project ID for `show` | `--db` | Reads the canonical project registry. |
 | `itoguruma version` | None | None | Prints the product version in `x.x.x` or `x.x.x.x` format. |
 
 ## MCP tools
@@ -42,6 +46,8 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 `provider`/`--provider` is required on every send and identifies the sender runtime, such as `codex` or `claude-code`. It is normalized to lowercase and must contain only ASCII letters, digits, and hyphens. Itoguruma stores the supplied value with the message and returns it through inbox leasing, redelivery, hooks, history, and Viewer. It is routing metadata supplied by an authenticated client, not proof of identity. Messages migrated from schema version 3 or earlier return `provider=unknown` without guessing a historical value.
 
 `message_type` accepts `message`, `notification`, `system`, or `change_request`. A change request requires a registered explicit recipient, a valid payload, and an existing Markdown file under `inbox/<target_project>/` in the configured CR root.
+
+When an unknown Agent recipient matches an enabled `project_id`, `send`/`send_message` transactionally creates its `project_inbox` Agent and delivers to the configured inbox. Unknown projects return `ITG_PROJECT_UNKNOWN`; disabled projects return `ITG_PROJECT_DISABLED`. Project mutations are unavailable through MCP and require a five-digit interactive-console confirmation (60 seconds, three attempts, no redirected input/output or bypass option). Referenced projects return `ITG_PROJECT_REFERENCED` on deletion; use `disable` instead.
 
 ## Examples
 
