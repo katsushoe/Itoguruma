@@ -7,6 +7,8 @@ public interface IMessageStore
         string? sessionId = null, string? metadataJson = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Agent>> ListAgentsAsync(CancellationToken cancellationToken = default);
     Task<bool> UnregisterAgentAsync(string agentId, CancellationToken cancellationToken = default);
+    Task<AgentHistoryDeleteResult> DeleteAgentHistoryAsync(string agentId, bool dryRun,
+        CancellationToken cancellationToken = default);
     Task<string> SendMessageAsync(SendMessageRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Message>> GetMessagesAsync(string agentId, int limit = 50,
         TimeSpan? leaseDuration = null, string? threadId = null, string? messageType = null,

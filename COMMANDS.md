@@ -11,6 +11,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `itoguruma register` | `--agent`, `--type` | `--name`, `--session`, `--metadata`, `--db` | Creates or refreshes an agent. |
 | `itoguruma agents` | None | `--db` | Lists registered agents. |
 | `itoguruma unregister` | `--agent` | `--db` | Removes an unreferenced agent. |
+| `itoguruma delete-agent-history` | `--agent` and interactive confirmation | `--dry-run`, `--db` | Previews or deletes history for one exact agent ID. Dry-run needs no confirmation. |
 | `itoguruma send` | `--from`, one or more `--to`, `--provider`, `--body`, `--thread` | `--reply-to`, `--message-type`, `--payload-json`, `--idempotency-key`, `--db` | Persists a message and queues deliveries. |
 | `itoguruma inbox` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Leases deliverable messages. |
 | `itoguruma ack` | `--agent`, `--message` | `--db` | Acknowledges a leased delivery. |
@@ -32,6 +33,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `register_agent` | `agent_id`, `agent_type` | Creates an agent or refreshes its heartbeat. |
 | `list_agents` | None | Returns all persisted agents. |
 | `unregister_agent` | `agent_id` | Fails while messages reference the agent. |
+| `delete_agent_history` | `agent_id`, `dry_run` | Previews or transactionally deletes associated messages and deliveries. |
 | `send_message` | sender, provider, body, thread, recipient(s) | Returns the persisted message ID; duplicate sender/idempotency-key pairs return the existing logical message. |
 | `get_messages` | `agent_id` | Leases matching pending or expired deliveries and returns none when no match exists. |
 | `ack_message` | `agent_id`, `message_id` | Acknowledges only the matching leased delivery. |
@@ -50,6 +52,8 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 When a recipient is not an Agent, `send`/`send_message` resolves an enabled matching `project_id`. If the project is also unknown, the send transactionally registers an enabled project and `project_inbox` Agent using the recipient as both IDs, then delivers the message. Disabled projects return `ITG_PROJECT_DISABLED`. Explicit project mutations are unavailable through MCP and require a five-digit interactive-console confirmation (60 seconds, three attempts, no redirected input/output or bypass option). Referenced projects return `ITG_PROJECT_REFERENCED` on deletion; use `disable` instead.
 
 Project IDs are matched case-insensitively while preserving the spelling used at registration. Agent IDs remain case-sensitive. A project ID that differs from an existing ID only by case cannot be registered separately.
+
+Before removing a referenced agent, call `delete_agent_history` with `dry_run=true` and review the message, delivery, and thread counts. After explicit approval, call it again with `dry_run=false`, then call `unregister_agent`. The delete includes messages sent by the exact agent ID, replies that depend on those messages, and deliveries addressed to the agent. It runs in one transaction and does not return or log message bodies or payloads. The audit record contains only the agent ID, counts, timestamp, and correlation ID. `ITG_AGENT_NOT_FOUND`, transaction conflict, and database failure are returned separately. The CLI requires the same interactive five-digit confirmation used by project mutations for an actual deletion.
 
 ## Examples
 

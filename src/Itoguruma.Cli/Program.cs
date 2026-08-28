@@ -38,6 +38,7 @@ try
         "register" => await service.RegisterAgentAsync(Required("--agent"), Required("--type"), Option("--name"), Option("--session"), Option("--metadata")),
         "agents" => await service.ListAgentsAsync(),
         "unregister" => new { unregistered = await service.UnregisterAgentAsync(Required("--agent")) },
+        "delete-agent-history" => await RunDeleteAgentHistoryAsync(service),
         "send" => new { message_id = await service.SendMessageAsync(new(Required("--from"), RequiredMany("--to"), Required("--body"), Required("--thread"), Required("--provider"), Option("--reply-to"), Option("--message-type") ?? "message", Option("--payload-json"), Option("--idempotency-key"))) },
         "inbox" => await service.GetMessagesAsync(Required("--agent"), Number("--limit",50), TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"), Option("--message-type")),
         "ack" => new { acked = await service.AckMessageAsync(Required("--agent"), Required("--message")) },
@@ -61,7 +62,14 @@ IReadOnlyList<string> RequiredMany(string name)
         : throw new ArgumentException(AppLocalization.Text($"Missing option: {name}", $"必須オプションがありません: {name}"));
 }
 int Number(string name,int fallback) => int.TryParse(Option(name),out var value) ? value : fallback;
-static int Usage() { Console.WriteLine(AppLocalization.Text("itoguruma register|agents|unregister|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\nSet ITOGURUMA_DB or pass --db <path>.", "itoguruma register|agents|unregister|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\nITOGURUMA_DBを設定するか、--db <path>を指定してください。")); return 0; }
+static int Usage() { Console.WriteLine(AppLocalization.Text("itoguruma register|agents|unregister|delete-agent-history|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\nSet ITOGURUMA_DB or pass --db <path>.", "itoguruma register|agents|unregister|delete-agent-history|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\nITOGURUMA_DBを設定するか、--db <path>を指定してください。")); return 0; }
+
+async Task<AgentHistoryDeleteResult> RunDeleteAgentHistoryAsync(MessagingService messagingService)
+{
+    var dryRun = arguments.Contains("--dry-run", StringComparer.Ordinal);
+    if (!dryRun) new HumanConfirmation(new SystemHumanConfirmationConsole()).Require();
+    return await messagingService.DeleteAgentHistoryAsync(Required("--agent"), dryRun);
+}
 
 async Task<int> RunProjectAsync(MessagingService messagingService)
 {

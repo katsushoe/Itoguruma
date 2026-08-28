@@ -110,6 +110,13 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
                 PRAGMA user_version=6;
                 """, cancellationToken);
             }
+            if (version < 7) await ApplyAsync(connection, (SqliteTransaction)transaction, """
+            ALTER TABLE audit_log ADD COLUMN correlation_id TEXT NULL;
+            ALTER TABLE audit_log ADD COLUMN message_count INTEGER NULL;
+            ALTER TABLE audit_log ADD COLUMN delivery_count INTEGER NULL;
+            ALTER TABLE audit_log ADD COLUMN thread_count INTEGER NULL;
+            PRAGMA user_version=7;
+            """, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
 
@@ -179,6 +186,123 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         command.CommandText = "DELETE FROM agents WHERE agent_id=$id;";
         Add(command, "$id", agentId);
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    public async Task<AgentHistoryDeleteResult> DeleteAgentHistoryAsync(string agentId, bool dryRun,
+        CancellationToken cancellationToken = default)
+    {
+        RequireText(agentId, nameof(agentId));
+        var correlationId = Guid.NewGuid().ToString("N");
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            await EnsureAgentExistsAsync(connection, (SqliteTransaction)transaction, agentId, cancellationToken);
+            await CreateAgentHistoryPlanAsync(connection, (SqliteTransaction)transaction, agentId, cancellationToken);
+            var messageCount = await CountAsync(connection, (SqliteTransaction)transaction,
+                "SELECT COUNT(*) FROM temp.agent_history_messages", agentId, cancellationToken);
+            var deliveryCount = await CountAsync(connection, (SqliteTransaction)transaction, """
+                SELECT COUNT(*) FROM message_deliveries
+                WHERE recipient_agent_id=$id OR message_id IN (SELECT message_id FROM temp.agent_history_messages)
+                """, agentId, cancellationToken);
+            var threadCount = await CountAsync(connection, (SqliteTransaction)transaction, """
+                SELECT COUNT(DISTINCT thread_id) FROM messages
+                WHERE message_id IN (SELECT message_id FROM temp.agent_history_messages)
+                   OR message_id IN (SELECT message_id FROM message_deliveries WHERE recipient_agent_id=$id)
+                """, agentId, cancellationToken);
+
+            if (dryRun)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return new(agentId, true, messageCount, deliveryCount, threadCount, true, correlationId);
+            }
+
+            await ExecuteAsync(connection, (SqliteTransaction)transaction, """
+                DELETE FROM message_deliveries
+                WHERE recipient_agent_id=$id OR message_id IN (SELECT message_id FROM temp.agent_history_messages)
+                """, agentId, cancellationToken);
+            await ExecuteAsync(connection, (SqliteTransaction)transaction,
+                "DELETE FROM messages WHERE message_id IN (SELECT message_id FROM temp.agent_history_messages)",
+                agentId, cancellationToken);
+            await AuditAgentHistoryDeleteAsync(connection, (SqliteTransaction)transaction, agentId,
+                correlationId, messageCount, deliveryCount, threadCount, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new(agentId, false, messageCount, deliveryCount, threadCount, true, correlationId);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private static async Task EnsureAgentExistsAsync(SqliteConnection connection, SqliteTransaction transaction,
+        string agentId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM agents WHERE agent_id=$id)";
+        Add(command, "$id", agentId);
+        if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken),
+                System.Globalization.CultureInfo.InvariantCulture) == 0)
+            throw new AgentHistoryOperationException(AgentHistoryErrorCodes.AgentNotFound, "Agent does not exist.");
+    }
+
+    private static async Task CreateAgentHistoryPlanAsync(SqliteConnection connection, SqliteTransaction transaction,
+        string agentId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            CREATE TEMP TABLE agent_history_messages(message_id TEXT PRIMARY KEY);
+            INSERT INTO temp.agent_history_messages(message_id)
+            WITH RECURSIVE affected(message_id) AS (
+              SELECT message_id FROM messages WHERE sender_agent_id=$id
+              UNION
+              SELECT child.message_id FROM messages child
+              JOIN affected parent ON child.reply_to_message_id=parent.message_id
+            )
+            SELECT message_id FROM affected;
+            """;
+        Add(command, "$id", agentId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<int> CountAsync(SqliteConnection connection, SqliteTransaction transaction,
+        string sql, string agentId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        Add(command, "$id", agentId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken),
+            System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static async Task ExecuteAsync(SqliteConnection connection, SqliteTransaction transaction,
+        string sql, string agentId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        Add(command, "$id", agentId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task AuditAgentHistoryDeleteAsync(SqliteConnection connection, SqliteTransaction transaction,
+        string agentId, string correlationId, int messageCount, int deliveryCount, int threadCount,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO audit_log(event_type,subject_id,created_at,correlation_id,message_count,delivery_count,thread_count)
+            VALUES('agent_history_deleted',$id,$now,$correlation,$messages,$deliveries,$threads)
+            """;
+        Add(command, "$id", agentId); Add(command, "$now", Format(Now()));
+        Add(command, "$correlation", correlationId); Add(command, "$messages", messageCount);
+        Add(command, "$deliveries", deliveryCount); Add(command, "$threads", threadCount);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<string> SendMessageAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
