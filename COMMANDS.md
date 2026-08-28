@@ -47,7 +47,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 `message_type` accepts `message`, `notification`, `system`, or `change_request`. A change request requires a registered explicit recipient, a valid payload, and an existing Markdown file under `inbox/<target_project>/` in the configured CR root.
 
-When an unknown Agent recipient matches an enabled `project_id`, `send`/`send_message` transactionally creates its `project_inbox` Agent and delivers to the configured inbox. Unknown projects return `ITG_PROJECT_UNKNOWN`; disabled projects return `ITG_PROJECT_DISABLED`. Project mutations are unavailable through MCP and require a five-digit interactive-console confirmation (60 seconds, three attempts, no redirected input/output or bypass option). Referenced projects return `ITG_PROJECT_REFERENCED` on deletion; use `disable` instead.
+When a recipient is not an Agent, `send`/`send_message` resolves an enabled matching `project_id`. If the project is also unknown, the send transactionally registers an enabled project and `project_inbox` Agent using the recipient as both IDs, then delivers the message. Disabled projects return `ITG_PROJECT_DISABLED`. Explicit project mutations are unavailable through MCP and require a five-digit interactive-console confirmation (60 seconds, three attempts, no redirected input/output or bypass option). Referenced projects return `ITG_PROJECT_REFERENCED` on deletion; use `disable` instead.
 
 ## Examples
 

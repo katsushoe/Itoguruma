@@ -106,7 +106,7 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task McpServer_WhenMessageReferencesUnknownAgent_ReturnsAiFriendlyJsonError()
+    public async Task McpServer_WhenMessageReferencesUnknownProject_AutoRegistersAndDelivers()
     {
         var databasePath = Path.Combine(_directory, "mcp-error.db");
         var requests = new[]
@@ -120,23 +120,16 @@ public sealed class ProcessIntegrationTests : IDisposable
                 body = "integration message",
                 thread_id = "integration",
                 idempotency_key = "integration-unknown-recipient"
-            })
+            }),
+            ToolRequest(3, "get_messages", new { agent_id = "missing-recipient" })
         };
 
         var result = await RunMcpAsync(requests, databasePath);
 
         Assert.Equal(0, result.ExitCode);
-        var toolResult = result.Output[1].RootElement.GetProperty("result");
-        Assert.True(toolResult.TryGetProperty("isError", out var isError), toolResult.GetRawText());
-        Assert.True(isError.GetBoolean());
-        using var errorDocument = JsonDocument.Parse(
-            toolResult.GetProperty("content")[0].GetProperty("text").GetString()!);
-        var data = errorDocument.RootElement;
-        Assert.Equal(ProjectErrorCodes.UnknownProject, data.GetProperty("errorCode").GetString());
-        Assert.Equal("validation/project_recipient", data.GetProperty("category").GetString());
-        Assert.Contains("interactive Itoguruma CLI",
-            data.GetProperty("suggestedAction").GetString(), StringComparison.Ordinal);
-        Assert.True(data.GetProperty("retryable").GetBoolean());
+        Assert.False(result.Output[1].RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
+        var message = Assert.Single(StructuredData(result.Output[2]).EnumerateArray());
+        Assert.Equal("integration message", message.GetProperty("body").GetString());
     }
 
     [Fact]

@@ -68,7 +68,7 @@ itoguruma auth rotate
 
 `send_message`の宛先は、単一宛先なら`recipient`、複数宛先なら`recipients`を使います。`message_type`は`message`、`notification`、`system`、`change_request`のいずれかです。CRは通常メッセージへフォールバックせず、登録済み担当Agentを明示的な宛先に指定します。
 
-未登録Agentの宛先が有効な`project_id`と一致する場合、`send`／`send_message`はトランザクション内で`project_inbox` Agentを作成し、設定済み受信箱へ配送します。未知プロジェクトは`ITG_PROJECT_UNKNOWN`、無効プロジェクトは`ITG_PROJECT_DISABLED`を返します。プロジェクト変更はMCPから実行できず、実コンソールで5桁コードを60秒以内、最大3回で再入力する必要があります。入出力リダイレクトや回避オプションは認めません。参照済みプロジェクトの削除は`ITG_PROJECT_REFERENCED`となるため、`disable`を使用します。
+宛先がAgentではない場合、`send`／`send_message`は有効な`project_id`を検索します。プロジェクトも未登録なら、送信トランザクション内で宛先名をプロジェクトID兼Inbox Agent IDとして有効なプロジェクトと`project_inbox` Agentを自動登録し、そのまま配送します。無効プロジェクトは`ITG_PROJECT_DISABLED`を返します。明示的なプロジェクト変更はMCPから実行できず、実コンソールで5桁コードを60秒以内、最大3回で再入力する必要があります。入出力リダイレクトや回避オプションは認めません。参照済みプロジェクトの削除は`ITG_PROJECT_REFERENCED`となるため、`disable`を使用します。
 
 ## インストーラオプション
 

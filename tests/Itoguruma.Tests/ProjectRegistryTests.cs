@@ -23,6 +23,22 @@ public sealed class ProjectRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task SendMessage_ToUnknownProject_AutoRegistersProjectAndInbox()
+    {
+        var store = await CreateStoreAsync();
+        await store.RegisterAgentAsync("sender", "test");
+
+        await store.SendMessageAsync(new("sender", ["Kotodama"], "body", "thread", "codex"));
+
+        var project = Assert.Single(await store.ListProjectsAsync());
+        Assert.Equal("Kotodama", project.ProjectId);
+        Assert.Equal("Kotodama", project.DisplayName);
+        Assert.Equal("Kotodama", project.InboxAgentId);
+        Assert.True(project.Enabled);
+        Assert.Equal("body", Assert.Single(await store.GetMessagesAsync("Kotodama")).Body);
+    }
+
+    [Fact]
     public async Task SendMessage_ToDisabledProject_ReturnsFixedErrorCode()
     {
         var store = await CreateStoreAsync();
@@ -49,6 +65,20 @@ public sealed class ProjectRegistryTests : IDisposable
 
         Assert.Single(await store.ListAgentsAsync(), agent => agent.AgentType == "project_inbox");
         Assert.Equal(12, (await store.GetMessagesAsync("project-inbox-kotodama", limit: 50)).Count);
+    }
+
+    [Fact]
+    public async Task ConcurrentSend_ToUnknownProject_RegistersOneProjectAndInbox()
+    {
+        var store = await CreateStoreAsync();
+        await store.RegisterAgentAsync("sender", "test");
+
+        await Task.WhenAll(Enumerable.Range(0, 12).Select(index => store.SendMessageAsync(
+            new("sender", ["Kotodama"], $"body-{index}", "thread", "codex"))));
+
+        Assert.Single(await store.ListProjectsAsync());
+        Assert.Single(await store.ListAgentsAsync(), agent => agent.AgentType == "project_inbox");
+        Assert.Equal(12, (await store.GetMessagesAsync("Kotodama", limit: 50)).Count);
     }
 
     public void Dispose()

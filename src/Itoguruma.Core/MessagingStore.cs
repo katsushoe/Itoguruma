@@ -210,6 +210,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             }
             foreach (var recipient in request.Recipients.Distinct(StringComparer.Ordinal))
             {
+                RequireText(recipient, nameof(request.Recipients));
                 var resolvedRecipient = await ResolveRecipientAsync(
                     connection, (SqliteTransaction)transaction, recipient, cancellationToken);
                 await using var delivery = connection.CreateCommand();
@@ -403,10 +404,28 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         project.CommandText = "SELECT inbox_agent_id,enabled FROM projects WHERE project_id=$id"; Add(project, "$id", recipient);
         await using var reader = await project.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
-            throw new ProjectOperationException(ProjectErrorCodes.UnknownProject, "Unknown project or agent recipient.");
+        {
+            await reader.DisposeAsync();
+            var now = Format(Now());
+            await using var addProject = connection.CreateCommand(); addProject.Transaction = transaction;
+            addProject.CommandText = """
+                INSERT INTO projects(project_id,display_name,inbox_agent_id,enabled,created_at,updated_at)
+                VALUES($id,$id,$id,1,$now,$now);
+                """;
+            Add(addProject, "$id", recipient); Add(addProject, "$now", now);
+            await addProject.ExecuteNonQueryAsync(cancellationToken);
+            await AuditAsync(connection, transaction, "project_auto_registered", recipient, now, cancellationToken);
+            return await RegisterProjectInboxAsync(connection, transaction, recipient, recipient, cancellationToken);
+        }
         if (reader.GetInt32(1) == 0)
             throw new ProjectOperationException(ProjectErrorCodes.DisabledProject, "Project recipient is disabled.");
         var inbox = reader.GetString(0); await reader.DisposeAsync();
+        return await RegisterProjectInboxAsync(connection, transaction, recipient, inbox, cancellationToken);
+    }
+
+    private async Task<string> RegisterProjectInboxAsync(SqliteConnection connection, SqliteTransaction transaction,
+        string projectId, string inbox, CancellationToken cancellationToken)
+    {
         await using var register = connection.CreateCommand(); register.Transaction = transaction;
         register.CommandText = """
             INSERT OR IGNORE INTO agents(agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json)
@@ -414,7 +433,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             """;
         Add(register, "$id", inbox); Add(register, "$now", Format(Now()));
         if (await register.ExecuteNonQueryAsync(cancellationToken) == 1)
-            await AuditAsync(connection, transaction, "project_inbox_registered", recipient, Format(Now()), cancellationToken);
+            await AuditAsync(connection, transaction, "project_inbox_registered", projectId, Format(Now()), cancellationToken);
         return inbox;
     }
 

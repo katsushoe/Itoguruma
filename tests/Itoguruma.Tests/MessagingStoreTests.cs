@@ -61,10 +61,16 @@ public sealed class MessagingStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task SendMessage_WhenRecipientDoesNotExist_DoesNotPersistMessage()
+    public async Task SendMessage_WhenRecipientDoesNotExist_AutoRegistersProjectAndDelivers()
     {
         var store=CreateStore(); await store.InitializeAsync(); await store.RegisterAgentAsync("a","test");
-        await Assert.ThrowsAnyAsync<Exception>(()=>store.SendMessageAsync(new("a",["missing"],"hello","t","codex")));
+        await store.SendMessageAsync(new("a",["missing"],"hello","t","codex"));
+
+        var project = Assert.Single(await store.ListProjectsAsync());
+        Assert.Equal("missing", project.ProjectId);
+        Assert.Equal("missing", project.InboxAgentId);
+        Assert.True(project.Enabled);
+        Assert.Equal("hello", Assert.Single(await store.GetMessagesAsync("missing")).Body);
     }
 
     [Fact]
