@@ -37,12 +37,37 @@ public sealed class HumanConfirmationTests
         Assert.Equal(ProjectErrorCodes.ConfirmationFailed, exception.ErrorCode);
     }
 
-    private sealed class FakeConsole(string keys) : IHumanConfirmationConsole
+    [Fact]
+    public void Require_AfterLifetimeExpires_ReturnsFixedErrorCode()
+    {
+        var timeProvider = new AdvancingTimeProvider();
+        var console = new FakeConsole("12345", () => timeProvider.Advance(TimeSpan.FromSeconds(61)));
+
+        var exception = Assert.Throws<ProjectOperationException>(() =>
+            new HumanConfirmation(console, timeProvider, () => 12345).Require());
+
+        Assert.Equal(ProjectErrorCodes.ConfirmationExpired, exception.ErrorCode);
+    }
+
+    private sealed class FakeConsole(string keys, Action? onReadKey = null) : IHumanConfirmationConsole
     {
         private readonly Queue<char> _keys = new(keys);
         public bool IsInputRedirected { get; init; }
         public bool IsOutputRedirected { get; init; }
         public void WriteLine(string value) { }
-        public ConsoleKeyInfo ReadKey(bool intercept) => new(_keys.Dequeue(), ConsoleKey.D0, false, false, false);
+        public ConsoleKeyInfo ReadKey(bool intercept)
+        {
+            onReadKey?.Invoke();
+            return new(_keys.Dequeue(), ConsoleKey.D0, false, false, false);
+        }
+    }
+
+    private sealed class AdvancingTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _utcNow = DateTimeOffset.UnixEpoch;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan duration) => _utcNow += duration;
     }
 }
