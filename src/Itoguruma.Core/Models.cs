@@ -26,6 +26,7 @@ public static class ProjectErrorCodes
     public const string UnknownProject = "ITG_PROJECT_UNKNOWN";
     public const string DisabledProject = "ITG_PROJECT_DISABLED";
     public const string ProjectReferenced = "ITG_PROJECT_REFERENCED";
+    public const string ProjectCaseConflict = "ITG_PROJECT_CASE_CONFLICT";
     public const string ConfirmationFailed = "ITG_CONFIRMATION_FAILED";
     public const string ConfirmationExpired = "ITG_CONFIRMATION_EXPIRED";
     public const string ConsoleRedirected = "ITG_CONSOLE_REDIRECTED";

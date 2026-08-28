@@ -14,7 +14,7 @@ Every MCP request requires the bearer token in `ITOGURUMA_AUTH_TOKEN`. Do not pr
 
 Messages can contain sensitive text and remain in SQLite after acknowledgement. Protect the database with operating-system access controls. Change-request paths are restricted to existing Markdown files beneath the configured `inbox/<target_project>/` directory; validation failure never falls back to an ordinary message.
 
-The SQLite project registry is a routing trust boundary. MCP has no project mutation tools. CLI mutations require re-entry of a random five-digit code through non-redirected console input within 60 seconds, with three attempts. Codes and entered values are not logged. This blocks non-interactive automation and AI systems without terminal-input control; subjects able to control terminal input are outside the guarantee.
+The SQLite project registry records routing destinations. An authenticated send to an unknown recipient automatically registers an enabled project and inbox using that recipient ID, so project presence is not an authorization boundary. MCP has no general project mutation tools. Explicit CLI mutations require re-entry of a random five-digit code through non-redirected console input within 60 seconds, with three attempts. Codes and entered values are not logged.
 
 ## Reporting vulnerabilities
 

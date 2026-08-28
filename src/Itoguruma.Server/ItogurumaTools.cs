@@ -23,7 +23,7 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         | `validation/argument` | A parameter value is missing or invalid (e.g. no recipient, unsupported `message_type`, malformed `payload_json`). | Fix the parameter named in the error and retry. |
         | `validation/provider` | The required provider is missing or invalid. | Supply the sender provider using lowercase ASCII letters, digits, or hyphens, then retry with the same `idempotency_key`. |
         | `validation/change_request` | A CR path, payload field, canonical file field, or status is invalid or inconsistent. | Correct the CR payload or canonical file; do not fall back to a normal message. |
-        | `validation/project_recipient` | The recipient is neither an Agent nor an enabled known project. | Add or enable the project through the interactive CLI, then retry. |
+        | `validation/project_recipient` | The recipient is a disabled project. | Enable the project through the interactive CLI, then retry. |
         | `internal` | The operation failed for an unclassified internal reason. | Inspect the error content before retrying. |
         """;
 
@@ -112,7 +112,7 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
                 exception.ErrorCode,
                 "validation/project_recipient",
                 exception.Message,
-                "Register or enable the project through the interactive Itoguruma CLI, then retry with the same idempotency_key.",
+                "Enable the project through the interactive Itoguruma CLI, then retry with the same idempotency_key.",
                 true), isError: true);
         }
         catch (ArgumentException exception)
