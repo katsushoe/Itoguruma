@@ -190,6 +190,102 @@ public sealed class MessagingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteAgentHistory_WhenDryRun_ReturnsCountsWithoutDeleting()
+    {
+        var store = CreateStore(); await store.InitializeAsync();
+        await store.RegisterAgentAsync("target", "test"); await store.RegisterAgentAsync("other", "test");
+        var sent = await store.SendMessageAsync(new("target", ["other"], "sent", "related", "codex"));
+        await store.SendMessageAsync(new("other", ["target"], "reply", "related", "codex", sent));
+        await store.SendMessageAsync(new("other", ["target"], "inbound", "inbound", "codex"));
+
+        var result = await store.DeleteAgentHistoryAsync("target", true);
+
+        Assert.True(result.DryRun); Assert.Equal(2, result.MessageCount);
+        Assert.Equal(3, result.DeliveryCount); Assert.Equal(2, result.ThreadCount);
+        Assert.True(result.CanUnregister); Assert.NotEmpty(result.CorrelationId);
+        Assert.Equal(2, (await store.GetConversationHistoryAsync("related")).Count);
+        Assert.Equal(2, (await store.GetMessagesAsync("target")).Count);
+    }
+
+    [Fact]
+    public async Task DeleteAgentHistory_WhenExecuted_DeletesOnlyExactAgentHistoryAndAllowsUnregister()
+    {
+        var store = CreateStore(); await store.InitializeAsync();
+        foreach (var id in new[] { "target", "TARGET", "other" }) await store.RegisterAgentAsync(id, "test");
+        var sent = await store.SendMessageAsync(new("target", ["other"], "sent", "related", "codex"));
+        await store.SendMessageAsync(new("other", ["target"], "reply", "related", "codex", sent));
+        await store.SendMessageAsync(new("other", ["target"], "inbound", "inbound", "codex"));
+        await store.SendMessageAsync(new("TARGET", ["other"], "keep-case", "unrelated", "codex"));
+        await store.SendMessageAsync(new("other", ["TARGET"], "keep-delivery", "unrelated", "codex"));
+
+        var result = await store.DeleteAgentHistoryAsync("target", false);
+
+        Assert.False(result.DryRun); Assert.Equal(2, result.MessageCount); Assert.Equal(3, result.DeliveryCount);
+        Assert.Empty(await store.GetConversationHistoryAsync("related"));
+        Assert.Single(await store.GetConversationHistoryAsync("inbound"));
+        Assert.Equal(2, (await store.GetConversationHistoryAsync("unrelated")).Count);
+        Assert.True(await store.UnregisterAgentAsync("target"));
+        Assert.Contains(await store.ListAgentsAsync(), agent => agent.AgentId == "TARGET");
+        await using var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder { DataSource = Path.Combine(_directory, "messages.db"), Pooling = false }.ToString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT subject_id,correlation_id,message_count,delivery_count,thread_count " +
+            "FROM audit_log WHERE event_type='agent_history_deleted'";
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync()); Assert.Equal("target", reader.GetString(0));
+        Assert.Equal(result.CorrelationId, reader.GetString(1)); Assert.Equal(2, reader.GetInt32(2));
+        Assert.Equal(3, reader.GetInt32(3)); Assert.Equal(2, reader.GetInt32(4));
+    }
+
+    [Fact]
+    public async Task DeleteAgentHistory_WhenAgentHasNoHistory_ReturnsZeroAndAllowsUnregister()
+    {
+        var store = CreateStore(); await store.InitializeAsync();
+        await store.RegisterAgentAsync("empty", "test");
+
+        var result = await store.DeleteAgentHistoryAsync("empty", false);
+
+        Assert.Equal(0, result.MessageCount); Assert.Equal(0, result.DeliveryCount);
+        Assert.Equal(0, result.ThreadCount); Assert.True(await store.UnregisterAgentAsync("empty"));
+    }
+
+    [Fact]
+    public async Task DeleteAgentHistory_WhenAgentDoesNotExist_ThrowsStructuredException()
+    {
+        var store = CreateStore(); await store.InitializeAsync();
+
+        var exception = await Assert.ThrowsAsync<AgentHistoryOperationException>(() =>
+            store.DeleteAgentHistoryAsync("missing", true));
+
+        Assert.Equal(AgentHistoryErrorCodes.AgentNotFound, exception.ErrorCode);
+    }
+
+    [Fact]
+    public async Task DeleteAgentHistory_WhenDeleteFails_RollsBackTransaction()
+    {
+        var store = CreateStore(); await store.InitializeAsync();
+        await store.RegisterAgentAsync("target", "test"); await store.RegisterAgentAsync("other", "test");
+        var messageId = await store.SendMessageAsync(new("target", ["other"], "sent", "rollback", "codex"));
+        var databasePath = Path.Combine(_directory, "messages.db");
+        await using (var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString()))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"CREATE TRIGGER fail_history_delete BEFORE DELETE ON messages " +
+                $"WHEN OLD.message_id='{messageId}' BEGIN SELECT RAISE(ABORT,'forced failure'); END;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await Assert.ThrowsAsync<SqliteException>(() => store.DeleteAgentHistoryAsync("target", false));
+
+        Assert.Single(await store.GetConversationHistoryAsync("rollback"));
+        Assert.Single(await store.GetMessagesAsync("other"));
+        await Assert.ThrowsAsync<SqliteException>(() => store.UnregisterAgentAsync("target"));
+    }
+
+    [Fact]
     public async Task Initialize_WhenSchemaVersionIsTwo_MigratesAndAcceptsChangeRequest()
     {
         Directory.CreateDirectory(_directory);

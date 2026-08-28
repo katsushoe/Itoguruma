@@ -22,6 +22,10 @@ public sealed class MessagingService(IMessageStore store, ChangeRequestValidator
     public Task<bool> UnregisterAgentAsync(string agentId, CancellationToken cancellationToken = default) =>
         store.UnregisterAgentAsync(agentId, cancellationToken);
 
+    public Task<AgentHistoryDeleteResult> DeleteAgentHistoryAsync(string agentId, bool dryRun,
+        CancellationToken cancellationToken = default) =>
+        store.DeleteAgentHistoryAsync(agentId, dryRun, cancellationToken);
+
     public async Task<string> SendMessageAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
     {
         if (!MessageTypes.Contains(request.MessageType))

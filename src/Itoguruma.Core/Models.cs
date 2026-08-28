@@ -21,6 +21,19 @@ public sealed record Project(string ProjectId, string DisplayName, string InboxA
 public sealed record ProjectMutation(string ProjectId, string? DisplayName = null,
     string? InboxAgentId = null);
 
+public sealed record AgentHistoryDeleteResult(string AgentId, bool DryRun, int MessageCount,
+    int DeliveryCount, int ThreadCount, bool CanUnregister, string CorrelationId);
+
+public static class AgentHistoryErrorCodes
+{
+    public const string AgentNotFound = "ITG_AGENT_NOT_FOUND";
+}
+
+public sealed class AgentHistoryOperationException(string errorCode, string message) : InvalidOperationException(message)
+{
+    public string ErrorCode { get; } = errorCode;
+}
+
 public static class ProjectErrorCodes
 {
     public const string UnknownProject = "ITG_PROJECT_UNKNOWN";

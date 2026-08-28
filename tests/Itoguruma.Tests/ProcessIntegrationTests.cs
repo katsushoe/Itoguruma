@@ -106,6 +106,33 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpServer_WhenAgentHistoryIsDeleted_SupportsDryRunAndUnregister()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-agent-history.db");
+        var result = await RunMcpAsync([
+            ToolRequest(1, "register_agent", new { agent_id = "target", agent_type = "test" }),
+            ToolRequest(2, "register_agent", new { agent_id = "other", agent_type = "test" }),
+            ToolRequest(3, "send_message", new
+            {
+                sender_agent_id = "target", recipient = "other", provider = "codex",
+                body = "secret-body", thread_id = "delete-thread"
+            }),
+            ToolRequest(4, "delete_agent_history", new { agent_id = "target", dry_run = true }),
+            ToolRequest(5, "delete_agent_history", new { agent_id = "target", dry_run = false }),
+            ToolRequest(6, "unregister_agent", new { agent_id = "target" })
+        ], databasePath);
+
+        var preview = StructuredData(result.Output[3]);
+        var deleted = StructuredData(result.Output[4]);
+        Assert.True(preview.GetProperty("dryRun").GetBoolean());
+        Assert.Equal(1, preview.GetProperty("messageCount").GetInt32());
+        Assert.False(deleted.GetProperty("dryRun").GetBoolean());
+        Assert.True(StructuredData(result.Output[5]).GetProperty("unregistered").GetBoolean());
+        Assert.DoesNotContain("secret-body", result.Output[3].RootElement.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-body", result.Output[4].RootElement.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task McpServer_WhenMessageReferencesUnknownProject_AutoRegistersAndDelivers()
     {
         var databasePath = Path.Combine(_directory, "mcp-error.db");
@@ -213,6 +240,12 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("get_hook_context", names);
         Assert.Contains("get_auth_status", names);
         Assert.Contains("rotate_auth_token", names);
+        Assert.Contains("delete_agent_history", names);
+        var deleteHistory = tools.EnumerateArray().Single(tool =>
+            tool.GetProperty("name").GetString() == "delete_agent_history");
+        Assert.True(deleteHistory.GetProperty("annotations").GetProperty("destructiveHint").GetBoolean());
+        Assert.Contains(deleteHistory.GetProperty("inputSchema").GetProperty("required").EnumerateArray(),
+            item => item.GetString() == "dry_run");
     }
 
     [Fact]
@@ -381,6 +414,26 @@ public sealed class ProcessIntegrationTests : IDisposable
         var message = Assert.Single(document.RootElement.EnumerateArray());
         Assert.Equal("shared message", message.GetProperty("body").GetString());
         Assert.Equal("codex", message.GetProperty("provider").GetString());
+    }
+
+    [Fact]
+    public async Task AgentCli_WhenAgentHistoryDryRunIsRequested_ReturnsPreviewWithoutConfirmation()
+    {
+        var databasePath = Path.Combine(_directory, "cli-agent-history.db");
+        var service = new MessagingService(new SqliteMessageStore(databasePath));
+        await service.InitializeAsync();
+        await service.RegisterAgentAsync("target", "test");
+        await service.RegisterAgentAsync("other", "test");
+        await service.SendMessageAsync(new("target", ["other"], "keep", "cli-delete", "codex"));
+
+        var result = await RunAsync("itoguruma",
+            ["delete-agent-history", "--agent", "target", "--dry-run"], databasePath, string.Empty);
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.StandardOutput);
+        Assert.True(document.RootElement.GetProperty("dryRun").GetBoolean());
+        Assert.Equal(1, document.RootElement.GetProperty("messageCount").GetInt32());
+        Assert.Single(await service.GetConversationHistoryAsync("cli-delete"));
     }
 
     [Fact]

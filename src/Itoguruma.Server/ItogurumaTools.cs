@@ -68,6 +68,46 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         }
     }
 
+    /// <summary>対象エージェントに関係するメッセージ履歴を削除または事前確認します。</summary>
+    [McpServerTool(Name = "delete_agent_history", Destructive = true, UseStructuredContent = true)]
+    [Description("Preview or delete all message and delivery history associated with one exact agent ID. " +
+        "dry_run=true does not delete data. The operation never returns message bodies or payloads.")]
+    public async Task<CallToolResult> DeleteAgentHistory(string agent_id, bool dry_run,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return CreateResult(await service.DeleteAgentHistoryAsync(agent_id, dry_run, cancellationToken));
+        }
+        catch (AgentHistoryOperationException exception)
+        {
+            return CreateResult(new ToolError(
+                exception.ErrorCode,
+                "validation/agent",
+                exception.Message,
+                "Verify the exact agent_id with list_agents and retry.",
+                false), isError: true);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
+        {
+            return CreateResult(new ToolError(
+                "agent_history_conflict",
+                "sqlite/transaction/conflict",
+                "The agent history transaction conflicted with another database operation.",
+                "Wait for the other operation to finish, then retry dry-run before deletion.",
+                true), isError: true);
+        }
+        catch (SqliteException)
+        {
+            return CreateResult(new ToolError(
+                "agent_history_database_failure",
+                "sqlite/transaction/failure",
+                "The agent history transaction failed and was rolled back.",
+                "Inspect the server log by correlation time, correct the database problem, and retry dry-run.",
+                true), isError: true);
+        }
+    }
+
     /// <summary>メッセージを冪等に送信します。</summary>
     [McpServerTool(Name = "send_message", Idempotent = true, UseStructuredContent = true,
         OutputSchemaType = typeof(ToolData<MessageSentResult>))]
