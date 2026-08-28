@@ -23,6 +23,48 @@ public sealed class ProjectRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task SendMessage_ToKnownProjectWithDifferentCase_UsesCanonicalProject()
+    {
+        var store = await CreateStoreAsync();
+        await store.RegisterAgentAsync("sender", "test");
+        await store.AddProjectAsync(new("Kotodama", "Kotodama", "project-inbox-kotodama"));
+
+        await store.SendMessageAsync(new("sender", ["KOTODAMA"], "body", "thread", "codex"));
+
+        Assert.Single(await store.ListProjectsAsync());
+        Assert.Equal("body", Assert.Single(await store.GetMessagesAsync("project-inbox-kotodama")).Body);
+        Assert.Equal("Kotodama", (await store.GetProjectAsync("kotodama"))!.ProjectId);
+    }
+
+    [Fact]
+    public async Task ProjectOperations_WithDifferentCase_TargetCanonicalProject()
+    {
+        var store = await CreateStoreAsync();
+        await store.AddProjectAsync(new("Kotodama", "Before", "project-inbox-kotodama"));
+
+        var updated = await store.UpdateProjectAsync(new("KOTODAMA", "After"));
+        var disabled = await store.SetProjectEnabledAsync("kotodama", false);
+
+        Assert.Equal("Kotodama", updated.ProjectId);
+        Assert.Equal("After", updated.DisplayName);
+        Assert.False(disabled.Enabled);
+        Assert.True(await store.DeleteProjectAsync("KoToDaMa"));
+        Assert.Empty(await store.ListProjectsAsync());
+    }
+
+    [Fact]
+    public async Task AddProject_WhenIdDiffersOnlyByCase_RejectsDuplicate()
+    {
+        var store = await CreateStoreAsync();
+        await store.AddProjectAsync(new("Kotodama", null, "project-inbox-kotodama"));
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            store.AddProjectAsync(new("kotodama", null, "project-inbox-duplicate")));
+
+        Assert.Single(await store.ListProjectsAsync());
+    }
+
+    [Fact]
     public async Task SendMessage_ToUnknownProject_AutoRegistersProjectAndInbox()
     {
         var store = await CreateStoreAsync();

@@ -101,7 +101,29 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
               subject_id TEXT NOT NULL, created_at TEXT NOT NULL);
             PRAGMA user_version=5;
             """, cancellationToken);
+            if (version < 6)
+            {
+                await EnsureNoProjectCaseConflictsAsync(connection, (SqliteTransaction)transaction, cancellationToken);
+                await ApplyAsync(connection, (SqliteTransaction)transaction, """
+                CREATE UNIQUE INDEX ux_projects_id_nocase
+                  ON projects(project_id COLLATE ITOGURUMA_NOCASE);
+                PRAGMA user_version=6;
+                """, cancellationToken);
+            }
             await transaction.CommitAsync(cancellationToken);
+        }
+
+        private static async Task EnsureNoProjectCaseConflictsAsync(SqliteConnection connection,
+            SqliteTransaction transaction, CancellationToken cancellationToken)
+        {
+            await using var command = connection.CreateCommand(); command.Transaction = transaction;
+            command.CommandText = """
+                SELECT project_id FROM projects
+                GROUP BY project_id COLLATE ITOGURUMA_NOCASE HAVING COUNT(*) > 1 LIMIT 1;
+                """;
+            if (await command.ExecuteScalarAsync(cancellationToken) is string projectId)
+                throw new ProjectOperationException(ProjectErrorCodes.ProjectCaseConflict,
+                    $"Project IDs differ only by case: {projectId}");
         }
 
         private static async Task ApplyAsync(SqliteConnection connection, SqliteTransaction transaction,
@@ -332,7 +354,8 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         await using var command = connection.CreateCommand(); command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = """
             UPDATE projects SET display_name=COALESCE($name,display_name),
-              inbox_agent_id=COALESCE($inbox,inbox_agent_id),updated_at=$now WHERE project_id=$id;
+              inbox_agent_id=COALESCE($inbox,inbox_agent_id),updated_at=$now
+              WHERE project_id=$id COLLATE ITOGURUMA_NOCASE;
             """;
         Add(command, "$id", mutation.ProjectId); Add(command, "$name", mutation.DisplayName);
         Add(command, "$inbox", mutation.InboxAgentId); Add(command, "$now", now);
@@ -349,7 +372,10 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         await using var command = connection.CreateCommand(); command.Transaction = (SqliteTransaction)transaction;
-        command.CommandText = "UPDATE projects SET enabled=$enabled,updated_at=$now WHERE project_id=$id";
+        command.CommandText = """
+            UPDATE projects SET enabled=$enabled,updated_at=$now
+            WHERE project_id=$id COLLATE ITOGURUMA_NOCASE;
+            """;
         Add(command, "$enabled", enabled ? 1 : 0); Add(command, "$now", now); Add(command, "$id", projectId);
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
             throw new ProjectOperationException(ProjectErrorCodes.UnknownProject, "Unknown project.");
@@ -366,13 +392,15 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         await using var referenced = connection.CreateCommand(); referenced.Transaction = (SqliteTransaction)transaction;
         referenced.CommandText = """
             SELECT EXISTS(SELECT 1 FROM projects p JOIN agents a ON a.agent_id=p.inbox_agent_id
-              JOIN message_deliveries d ON d.recipient_agent_id=a.agent_id WHERE p.project_id=$id);
+              JOIN message_deliveries d ON d.recipient_agent_id=a.agent_id
+              WHERE p.project_id=$id COLLATE ITOGURUMA_NOCASE);
             """;
         Add(referenced, "$id", projectId);
         if (Convert.ToInt32(await referenced.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture) != 0)
             throw new ProjectOperationException(ProjectErrorCodes.ProjectReferenced, "Project is referenced by delivery history; disable it instead.");
         await using var command = connection.CreateCommand(); command.Transaction = (SqliteTransaction)transaction;
-        command.CommandText = "DELETE FROM projects WHERE project_id=$id"; Add(command, "$id", projectId);
+        command.CommandText = "DELETE FROM projects WHERE project_id=$id COLLATE ITOGURUMA_NOCASE";
+        Add(command, "$id", projectId);
         var deleted = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
         if (deleted) await AuditAsync(connection, (SqliteTransaction)transaction, "project_deleted", projectId, now, cancellationToken);
         await transaction.CommitAsync(cancellationToken); return deleted;
@@ -389,7 +417,10 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     public async Task<Project?> GetProjectAsync(string projectId, CancellationToken cancellationToken = default)
     {
         RequireText(projectId, nameof(projectId)); await using var connection = await OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand(); command.CommandText = "SELECT project_id,display_name,inbox_agent_id,enabled,created_at,updated_at FROM projects WHERE project_id=$id";
+        await using var command = connection.CreateCommand(); command.CommandText = """
+            SELECT project_id,display_name,inbox_agent_id,enabled,created_at,updated_at
+            FROM projects WHERE project_id=$id COLLATE ITOGURUMA_NOCASE;
+            """;
         Add(command, "$id", projectId); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadProject(reader) : null;
     }
@@ -401,7 +432,11 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         agent.CommandText = "SELECT agent_id FROM agents WHERE agent_id=$id"; Add(agent, "$id", recipient);
         if (await agent.ExecuteScalarAsync(cancellationToken) is string existing) return existing;
         await using var project = connection.CreateCommand(); project.Transaction = transaction;
-        project.CommandText = "SELECT inbox_agent_id,enabled FROM projects WHERE project_id=$id"; Add(project, "$id", recipient);
+        project.CommandText = """
+            SELECT inbox_agent_id,enabled FROM projects
+            WHERE project_id=$id COLLATE ITOGURUMA_NOCASE;
+            """;
+        Add(project, "$id", recipient);
         await using var reader = await project.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -459,7 +494,10 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
 
     private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
     {
-        var connection = new SqliteConnection(ConnectionString); await connection.OpenAsync(cancellationToken);
+        var connection = new SqliteConnection(ConnectionString);
+        connection.CreateCollation("ITOGURUMA_NOCASE",
+            (left, right) => string.Compare(left, right, StringComparison.OrdinalIgnoreCase));
+        await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
         await command.ExecuteNonQueryAsync(cancellationToken); return connection;

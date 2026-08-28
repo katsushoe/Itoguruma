@@ -49,6 +49,8 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 When a recipient is not an Agent, `send`/`send_message` resolves an enabled matching `project_id`. If the project is also unknown, the send transactionally registers an enabled project and `project_inbox` Agent using the recipient as both IDs, then delivers the message. Disabled projects return `ITG_PROJECT_DISABLED`. Explicit project mutations are unavailable through MCP and require a five-digit interactive-console confirmation (60 seconds, three attempts, no redirected input/output or bypass option). Referenced projects return `ITG_PROJECT_REFERENCED` on deletion; use `disable` instead.
 
+Project IDs are matched case-insensitively while preserving the spelling used at registration. Agent IDs remain case-sensitive. A project ID that differs from an existing ID only by case cannot be registered separately.
+
 ## Examples
 
 ```powershell
