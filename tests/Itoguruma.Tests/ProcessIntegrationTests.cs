@@ -503,6 +503,29 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(1, second.ExitCode);
     }
 
+    [Fact]
+    public async Task McpServer_WhenLogDirectoryCannotBeCreated_HandlesExceptionAtApplicationBoundary()
+    {
+        var invalidLogDirectory = Path.Combine(_directory, "log-file");
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(invalidLogDirectory, "not a directory");
+        var startInfo = CreateMcpServerStartInfo(
+            Path.Combine(_directory, "startup-failure.db"),
+            $"http://127.0.0.1:{GetAvailablePort()}",
+            Guid.NewGuid().ToString("N"));
+        startInfo.Environment["ITOGURUMA_LOG_DIR"] = invalidLogDirectory;
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
+        var standardError = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await process.WaitForExitAsync(timeout.Token);
+        var error = await standardError;
+
+        Assert.Equal(1, process.ExitCode);
+        Assert.Contains("[FatalStartup]", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unhandled exception.", error, StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, true);
