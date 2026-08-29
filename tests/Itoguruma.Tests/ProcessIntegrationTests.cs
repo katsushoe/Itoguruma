@@ -490,6 +490,18 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Installer_WhenStoppingExistingServer_WaitsForCompleteProcessExit()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
+
+        Assert.Contains("[int]$ServerStopTimeoutSeconds = 30", installer, StringComparison.Ordinal);
+        Assert.Contains("$installedServers.Count -eq 0", installer, StringComparison.Ordinal);
+        Assert.Contains("did not stop within $ServerStopTimeoutSeconds seconds", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("Wait-Process -Timeout 10 -ErrorAction SilentlyContinue", installer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task McpServer_WhenDatabaseIsAlreadyInUse_SecondProcessExits()
     {
         var databasePath = Path.Combine(_directory, "single-instance.db");

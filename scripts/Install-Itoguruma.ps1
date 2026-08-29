@@ -8,6 +8,8 @@ param(
     [ValidateSet("", "en", "ja")]
     [string]$Language = "",
     [string]$ServerUrl = "http://127.0.0.1:47631",
+    [ValidateRange(5, 120)]
+    [int]$ServerStopTimeoutSeconds = 30,
     [switch]$NoPath,
     [switch]$SkipCodex,
     [switch]$SkipClaude
@@ -173,8 +175,18 @@ try {
     }
     $installedServers = @(Get-Process -Name "Itoguruma.Server" -ErrorAction SilentlyContinue |
         Where-Object { $serverPaths -contains $_.Path })
-    $installedServers | Stop-Process -Force
-    $installedServers | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+    $installedServers | Stop-Process -Force -ErrorAction SilentlyContinue
+    $stopDeadline = [DateTimeOffset]::UtcNow.AddSeconds($ServerStopTimeoutSeconds)
+    do {
+        $installedServers = @(Get-Process -Name "Itoguruma.Server" -ErrorAction SilentlyContinue |
+            Where-Object { $serverPaths -contains $_.Path })
+        if ($installedServers.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTimeOffset]::UtcNow -lt $stopDeadline)
+    if ($installedServers.Count -ne 0) {
+        $remainingProcessIds = ($installedServers.Id -join ", ")
+        throw "The existing Itoguruma.Server process did not stop within $ServerStopTimeoutSeconds seconds. Process IDs: $remainingProcessIds"
+    }
     $installedServerPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
     if (Test-Path -LiteralPath $installedServerPath) {
         $serverUnlocked = $false
