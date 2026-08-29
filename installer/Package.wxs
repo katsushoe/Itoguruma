@@ -1,8 +1,8 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
-  <Package Name="Itoguruma" Manufacturer="sazysoft" Version="$(var.ProductVersion)"
+  <Package Name="Itoguruma" Manufacturer="Akatsukisoft" Version="$(var.ProductVersion)"
            UpgradeCode="7B549A85-8D3B-45C5-BD34-7443BC021017" Scope="perUser" Language="1033" Codepage="65001">
-    <SummaryInformation Description="Itoguruma installer" Manufacturer="sazysoft" />
+    <SummaryInformation Description="Itoguruma installer" Manufacturer="Akatsukisoft" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of Itoguruma is already installed." />
     <MediaTemplate EmbedCab="yes" />
 

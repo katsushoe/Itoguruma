@@ -448,6 +448,20 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task AgentCli_WhenDatabaseCannotBeOpened_HandlesExceptionAtApplicationBoundary()
+    {
+        var databasePath = Path.Combine(_directory, "database-directory");
+        Directory.CreateDirectory(databasePath);
+
+        var result = await RunAsync("itoguruma", ["agents"], databasePath, string.Empty);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Contains("CommandFailure", result.StandardError, StringComparison.Ordinal);
+        Assert.Contains("Itoguruma could not complete the command", result.StandardError, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unhandled exception.", result.StandardError, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AgentCli_WhenVersionIsRequested_ReturnsRunningProductVersion()
     {
         var result = await RunAsync("itoguruma", ["version"], Path.Combine(_directory, "version.db"), string.Empty);
@@ -487,6 +501,29 @@ public sealed class ProcessIntegrationTests : IDisposable
         await second.WaitForExitAsync(timeout.Token);
 
         Assert.Equal(1, second.ExitCode);
+    }
+
+    [Fact]
+    public async Task McpServer_WhenLogDirectoryCannotBeCreated_HandlesExceptionAtApplicationBoundary()
+    {
+        var invalidLogDirectory = Path.Combine(_directory, "log-file");
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(invalidLogDirectory, "not a directory");
+        var startInfo = CreateMcpServerStartInfo(
+            Path.Combine(_directory, "startup-failure.db"),
+            $"http://127.0.0.1:{GetAvailablePort()}",
+            Guid.NewGuid().ToString("N"));
+        startInfo.Environment["ITOGURUMA_LOG_DIR"] = invalidLogDirectory;
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
+        var standardError = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await process.WaitForExitAsync(timeout.Token);
+        var error = await standardError;
+
+        Assert.Equal(1, process.ExitCode);
+        Assert.Contains("[FatalStartup]", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unhandled exception.", error, StringComparison.Ordinal);
     }
 
     public void Dispose()

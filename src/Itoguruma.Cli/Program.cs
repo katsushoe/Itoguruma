@@ -1,36 +1,54 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Itoguruma.Cli;
 using Itoguruma.Core;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 
 AppLocalization.ConfigureFromEnvironment();
 
 var arguments = args.ToList();
-if (arguments.Count == 0 || arguments[0] is "-h" or "--help") return Usage();
-if (arguments[0] is "version" or "--version")
+using var loggerFactory = LoggerFactory.Create(builder =>
 {
-    Console.WriteLine($"itoguruma {ProductInfo.Version}");
-    return 0;
-}
-if (arguments[0] == "auth")
+    builder.AddSimpleConsole(options =>
+    {
+        options.SingleLine = true;
+        options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffzzz ";
+    });
+    builder.Services.Configure<ConsoleLoggerOptions>(options =>
+        options.LogToStandardErrorThreshold = LogLevel.Trace);
+});
+var logger = loggerFactory.CreateLogger("Itoguruma.Cli");
+AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
 {
-    try
+    if (eventArgs.ExceptionObject is Exception ex)
+        logger.LogCritical(ex, "[UnhandledException] The CLI terminated because of an unhandled exception.");
+};
+TaskScheduler.UnobservedTaskException += (_, eventArgs) =>
+{
+    logger.LogError(eventArgs.Exception, "[UnobservedTaskException] An unobserved task exception occurred.");
+    eventArgs.SetObserved();
+};
+
+try
+{
+    if (arguments.Count == 0 || arguments[0] is "-h" or "--help") return Usage();
+    if (arguments[0] is "version" or "--version")
+    {
+        Console.WriteLine($"itoguruma {ProductInfo.Version}");
+        return 0;
+    }
+    if (arguments[0] == "auth")
     {
         return new AuthCommand(new UserEnvironmentTokenStore(), Console.In, Console.Out, Console.Error)
             .Run(arguments.Skip(1).ToList());
     }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine(ex.Message);
-        return 2;
-    }
-}
-var db = Option("--db") ?? Environment.GetEnvironmentVariable("ITOGURUMA_DB")
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
-var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT");
-var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
-var service = new MessagingService(new SqliteMessageStore(db), changeRequestValidator); await service.InitializeAsync();
-try
-{
+    var db = Option("--db") ?? Environment.GetEnvironmentVariable("ITOGURUMA_DB")
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
+    var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT");
+    var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
+    var service = new MessagingService(new SqliteMessageStore(db), changeRequestValidator);
+    await service.InitializeAsync();
     if (arguments[0] == "project") return await RunProjectAsync(service);
     if (arguments[0] == "hook") return await RunHookAsync(service, Required("--agent"));
     object result = arguments[0] switch
@@ -48,7 +66,14 @@ try
     };
     Console.WriteLine(JsonSerializer.Serialize(result,new JsonSerializerOptions(JsonSerializerDefaults.Web){WriteIndented=true})); return 0;
 }
-catch(Exception ex) { Console.Error.WriteLine(ex.Message); return 2; }
+catch(Exception ex)
+{
+    logger.LogError(ex, "[CommandFailure] The CLI command failed.");
+    Console.Error.WriteLine(AppLocalization.Text(
+        "Itoguruma could not complete the command. See the error log output for details.",
+        "Itogurumaはコマンドを完了できませんでした。詳細はエラーログ出力を確認してください。"));
+    return 2;
+}
 
 string? Option(string name) { var i=arguments.IndexOf(name); return i>=0 && i+1<arguments.Count ? arguments[i+1] : null; }
 string Required(string name) => Option(name) ?? throw new ArgumentException(AppLocalization.Text($"Missing option: {name}", $"必須オプションがありません: {name}"));
