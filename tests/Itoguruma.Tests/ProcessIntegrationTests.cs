@@ -448,6 +448,20 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task AgentCli_WhenDatabaseCannotBeOpened_HandlesExceptionAtApplicationBoundary()
+    {
+        var databasePath = Path.Combine(_directory, "database-directory");
+        Directory.CreateDirectory(databasePath);
+
+        var result = await RunAsync("itoguruma", ["agents"], databasePath, string.Empty);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Contains("CommandFailure", result.StandardError, StringComparison.Ordinal);
+        Assert.Contains("Itoguruma could not complete the command", result.StandardError, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unhandled exception.", result.StandardError, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AgentCli_WhenVersionIsRequested_ReturnsRunningProductVersion()
     {
         var result = await RunAsync("itoguruma", ["version"], Path.Combine(_directory, "version.db"), string.Empty);
