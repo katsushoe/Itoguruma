@@ -18,6 +18,10 @@ public sealed class ItogurumaPrompts
         canonical CR file and a change_request message; never downgrade a failed change request to a normal message.
         Use get_conversation_history when prior acknowledged messages are needed. Do not acknowledge a message
         before its requested work or response has been handled.
+        Before send_message, call list_projects and select the canonical destination Project ID using
+        ordinal case-insensitive matching. Project IDs are repository names normalized with invariant lowercase
+        and must match ^[a-z][a-z0-9]*$. Never infer a destination from a display name, runtime Agent ID,
+        client, session, or sender_agent_id. A valid unknown Project ID is automatically registered.
         """;
 
     /// <summary>Itogurumaを安全に利用するための再利用可能なガイドを返します。</summary>
@@ -27,11 +31,17 @@ public sealed class ItogurumaPrompts
         Use Itoguruma to coordinate independent AI agents across project boundaries.
 
         Workflow:
-        1. Call register_agent for the sending and receiving agents.
-        2. Call send_message with sender_agent_id, recipient, the actual provider, body, and a stable thread_id.
-        3. The recipient calls get_messages to lease pending work.
-        4. Complete the request or send the required response before calling ack_message.
-        5. Call get_conversation_history when the full thread, including acknowledged messages, is needed.
+        1. Call register_agent for runtime agents that send messages or lease an inbox.
+        2. Call list_projects and select the canonical destination Project ID using case-insensitive matching.
+        3. Call send_message with sender_agent_id, the selected Project ID, the actual provider, body, and a stable thread_id.
+        4. The recipient calls get_messages with its inbox Agent ID to lease pending work.
+        5. Complete the request or send the required response before calling ack_message.
+        6. Call get_conversation_history when the full thread, including acknowledged messages, is needed.
+
+        Project IDs are repository names normalized with invariant lowercase and must match
+        ^[a-z][a-z0-9]*$. Do not use a display name, runtime Agent ID, client, session, or sender_agent_id as
+        a destination. A valid unknown Project ID is automatically registered. If send_message returns
+        candidates, choose only when the intended project is unambiguous; otherwise ask the user.
 
         Retry the same logical send with the same idempotency_key. Formal change requests must reference a
         validated canonical CR file and use message_type=change_request. If CR validation or delivery fails,

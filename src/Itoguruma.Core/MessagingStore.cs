@@ -354,7 +354,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
                     return existingId;
                 }
             }
-            foreach (var recipient in request.Recipients.Distinct(StringComparer.Ordinal))
+            foreach (var recipient in request.Recipients.Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 RequireText(recipient, nameof(request.Recipients));
                 var resolvedRecipient = await ResolveRecipientAsync(
@@ -452,6 +452,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     public async Task<Project> AddProjectAsync(ProjectMutation mutation, CancellationToken cancellationToken = default)
     {
         ValidateMutation(mutation, true);
+        var projectId = ProjectIdPolicy.Normalize(mutation.ProjectId);
         var now = Format(Now());
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
@@ -461,17 +462,18 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             INSERT INTO projects(project_id,display_name,inbox_agent_id,enabled,created_at,updated_at)
             VALUES($id,$name,$inbox,1,$now,$now);
             """;
-        Add(command, "$id", mutation.ProjectId); Add(command, "$name", mutation.DisplayName ?? mutation.ProjectId);
+        Add(command, "$id", projectId); Add(command, "$name", mutation.DisplayName ?? projectId);
         Add(command, "$inbox", mutation.InboxAgentId); Add(command, "$now", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
-        await AuditAsync(connection, (SqliteTransaction)transaction, "project_added", mutation.ProjectId, now, cancellationToken);
+        await AuditAsync(connection, (SqliteTransaction)transaction, "project_added", projectId, now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return (await GetProjectAsync(mutation.ProjectId, cancellationToken))!;
+        return (await GetProjectAsync(projectId, cancellationToken))!;
     }
 
     public async Task<Project> UpdateProjectAsync(ProjectMutation mutation, CancellationToken cancellationToken = default)
     {
         ValidateMutation(mutation, false);
+        var projectId = ProjectIdPolicy.Normalize(mutation.ProjectId);
         var now = Format(Now());
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
@@ -481,18 +483,18 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
               inbox_agent_id=COALESCE($inbox,inbox_agent_id),updated_at=$now
               WHERE project_id=$id COLLATE ITOGURUMA_NOCASE;
             """;
-        Add(command, "$id", mutation.ProjectId); Add(command, "$name", mutation.DisplayName);
+        Add(command, "$id", projectId); Add(command, "$name", mutation.DisplayName);
         Add(command, "$inbox", mutation.InboxAgentId); Add(command, "$now", now);
         if (await command.ExecuteNonQueryAsync(cancellationToken) == 0)
             throw new ProjectOperationException(ProjectErrorCodes.UnknownProject, "Unknown project.");
-        await AuditAsync(connection, (SqliteTransaction)transaction, "project_updated", mutation.ProjectId, now, cancellationToken);
+        await AuditAsync(connection, (SqliteTransaction)transaction, "project_updated", projectId, now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return (await GetProjectAsync(mutation.ProjectId, cancellationToken))!;
+        return (await GetProjectAsync(projectId, cancellationToken))!;
     }
 
     public async Task<Project> SetProjectEnabledAsync(string projectId, bool enabled, CancellationToken cancellationToken = default)
     {
-        RequireText(projectId, nameof(projectId)); var now = Format(Now());
+        projectId = NormalizeProjectId(projectId); var now = Format(Now());
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         await using var command = connection.CreateCommand(); command.Transaction = (SqliteTransaction)transaction;
@@ -510,7 +512,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
 
     public async Task<bool> DeleteProjectAsync(string projectId, CancellationToken cancellationToken = default)
     {
-        RequireText(projectId, nameof(projectId)); var now = Format(Now());
+        projectId = NormalizeProjectId(projectId); var now = Format(Now());
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         await using var referenced = connection.CreateCommand(); referenced.Transaction = (SqliteTransaction)transaction;
@@ -540,7 +542,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
 
     public async Task<Project?> GetProjectAsync(string projectId, CancellationToken cancellationToken = default)
     {
-        RequireText(projectId, nameof(projectId)); await using var connection = await OpenAsync(cancellationToken);
+        projectId = NormalizeProjectId(projectId); await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand(); command.CommandText = """
             SELECT project_id,display_name,inbox_agent_id,enabled,created_at,updated_at
             FROM projects WHERE project_id=$id COLLATE ITOGURUMA_NOCASE;
@@ -552,15 +554,22 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     private async Task<string> ResolveRecipientAsync(SqliteConnection connection, SqliteTransaction transaction,
         string recipient, CancellationToken cancellationToken)
     {
-        await using var agent = connection.CreateCommand(); agent.Transaction = transaction;
-        agent.CommandText = "SELECT agent_id FROM agents WHERE agent_id=$id"; Add(agent, "$id", recipient);
-        if (await agent.ExecuteScalarAsync(cancellationToken) is string existing) return existing;
+        var normalizedRecipient = ProjectIdPolicy.Normalize(recipient);
+        if (!ProjectIdPolicy.IsValid(normalizedRecipient))
+        {
+            var projects = await ListProjectsAsync(connection, transaction, cancellationToken);
+            throw new ProjectOperationException(
+                ProjectErrorCodes.InvalidProjectId,
+                "Project ID must match ^[a-z][a-z0-9]*$ after invariant lowercase normalization.",
+                recipient,
+                ProjectIdPolicy.FindCandidates(recipient, projects));
+        }
         await using var project = connection.CreateCommand(); project.Transaction = transaction;
         project.CommandText = """
-            SELECT inbox_agent_id,enabled FROM projects
+            SELECT project_id,display_name,inbox_agent_id,enabled FROM projects
             WHERE project_id=$id COLLATE ITOGURUMA_NOCASE;
             """;
-        Add(project, "$id", recipient);
+        Add(project, "$id", normalizedRecipient);
         await using var reader = await project.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -571,15 +580,24 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
                 INSERT INTO projects(project_id,display_name,inbox_agent_id,enabled,created_at,updated_at)
                 VALUES($id,$id,$id,1,$now,$now);
                 """;
-            Add(addProject, "$id", recipient); Add(addProject, "$now", now);
+            Add(addProject, "$id", normalizedRecipient); Add(addProject, "$now", now);
             await addProject.ExecuteNonQueryAsync(cancellationToken);
-            await AuditAsync(connection, transaction, "project_auto_registered", recipient, now, cancellationToken);
-            return await RegisterProjectInboxAsync(connection, transaction, recipient, recipient, cancellationToken);
+            await AuditAsync(connection, transaction, "project_auto_registered", normalizedRecipient, now, cancellationToken);
+            return await RegisterProjectInboxAsync(
+                connection, transaction, normalizedRecipient, normalizedRecipient, cancellationToken);
         }
-        if (reader.GetInt32(1) == 0)
-            throw new ProjectOperationException(ProjectErrorCodes.DisabledProject, "Project recipient is disabled.");
-        var inbox = reader.GetString(0); await reader.DisposeAsync();
-        return await RegisterProjectInboxAsync(connection, transaction, recipient, inbox, cancellationToken);
+        var projectId = reader.GetString(0);
+        var displayName = reader.GetString(1);
+        var inbox = reader.GetString(2);
+        var enabled = reader.GetInt32(3) != 0;
+        await reader.DisposeAsync();
+        if (!enabled)
+            throw new ProjectOperationException(
+                ProjectErrorCodes.DisabledProject,
+                "Project recipient is disabled.",
+                recipient,
+                [new ProjectCandidate(projectId, displayName, false)]);
+        return await RegisterProjectInboxAsync(connection, transaction, projectId, inbox, cancellationToken);
     }
 
     private async Task<string> RegisterProjectInboxAsync(SqliteConnection connection, SqliteTransaction transaction,
@@ -608,13 +626,42 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     private static void ValidateMutation(ProjectMutation mutation, bool requireInbox)
     {
         RequireText(mutation.ProjectId, nameof(mutation.ProjectId));
+        var normalizedProjectId = ProjectIdPolicy.Normalize(mutation.ProjectId);
+        if (!ProjectIdPolicy.IsValid(normalizedProjectId))
+            throw new ProjectOperationException(ProjectErrorCodes.InvalidProjectId,
+                "Project ID must match ^[a-z][a-z0-9]*$ after invariant lowercase normalization.",
+                mutation.ProjectId);
         if (requireInbox) RequireText(mutation.InboxAgentId ?? string.Empty, nameof(mutation.InboxAgentId));
         if (mutation.DisplayName is not null) RequireText(mutation.DisplayName, nameof(mutation.DisplayName));
         if (mutation.InboxAgentId is not null) RequireText(mutation.InboxAgentId, nameof(mutation.InboxAgentId));
     }
 
-    private static Project ReadProject(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1),
+    private static async Task<IReadOnlyList<Project>> ListProjectsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var projects = new List<Project>();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT project_id,display_name,inbox_agent_id,enabled,created_at,updated_at FROM projects ORDER BY project_id";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) projects.Add(ReadProject(reader));
+        return projects;
+    }
+
+    private static Project ReadProject(SqliteDataReader reader) => new(ProjectIdPolicy.Normalize(reader.GetString(0)), reader.GetString(1),
         reader.GetString(2), reader.GetInt32(3) != 0, Parse(reader.GetString(4)), Parse(reader.GetString(5)));
+
+    private static string NormalizeProjectId(string projectId)
+    {
+        var normalized = ProjectIdPolicy.Normalize(projectId);
+        if (!ProjectIdPolicy.IsValid(normalized))
+            throw new ProjectOperationException(ProjectErrorCodes.InvalidProjectId,
+                "Project ID must match ^[a-z][a-z0-9]*$ after invariant lowercase normalization.",
+                projectId);
+        return normalized;
+    }
 
     private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
     {

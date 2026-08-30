@@ -142,13 +142,13 @@ public sealed class ProcessIntegrationTests : IDisposable
             ToolRequest(2, "send_message", new
             {
                 sender_agent_id = "sender",
-                recipient = "missing-recipient",
+                recipient = "missingrecipient",
                 provider = "codex",
                 body = "integration message",
                 thread_id = "integration",
                 idempotency_key = "integration-unknown-recipient"
             }),
-            ToolRequest(3, "get_messages", new { agent_id = "missing-recipient" })
+            ToolRequest(3, "get_messages", new { agent_id = "missingrecipient" })
         };
 
         var result = await RunMcpAsync(requests, databasePath);
@@ -157,6 +157,53 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.False(result.Output[1].RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
         var message = Assert.Single(StructuredData(result.Output[2]).EnumerateArray());
         Assert.Equal("integration message", message.GetProperty("body").GetString());
+    }
+
+    [Fact]
+    public async Task McpServer_WhenProjectIdIsInvalid_ReturnsRegisteredProjectCandidates()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-invalid-project.db");
+        var store = new SqliteMessageStore(databasePath);
+        await store.InitializeAsync();
+        await store.RegisterAgentAsync("sender", "test");
+        await store.AddProjectAsync(new("moyai", "Moyai", "project-inbox-moyai"));
+
+        var result = await RunMcpAsync([
+            ToolRequest(1, "send_message", new
+            {
+                sender_agent_id = "sender", recipient = "moyai-codex-root", provider = "codex",
+                body = "blocked", thread_id = "invalid-project", idempotency_key = "invalid-project-1"
+            })], databasePath);
+
+        var toolResult = result.Output[0].RootElement.GetProperty("result");
+        Assert.True(toolResult.GetProperty("isError").GetBoolean());
+        using var errorDocument = JsonDocument.Parse(
+            toolResult.GetProperty("content")[0].GetProperty("text").GetString()!);
+        var error = errorDocument.RootElement;
+        Assert.Equal(ProjectErrorCodes.InvalidProjectId, error.GetProperty("errorCode").GetString());
+        Assert.Equal("moyai-codex-root", error.GetProperty("attemptedRecipient").GetString());
+        var candidate = Assert.Single(error.GetProperty("candidates").EnumerateArray());
+        Assert.Equal("moyai", candidate.GetProperty("projectId").GetString());
+        Assert.True(candidate.GetProperty("enabled").GetBoolean());
+        Assert.Empty(await store.GetConversationHistoryAsync("invalid-project"));
+    }
+
+    [Fact]
+    public async Task McpServer_WhenProjectsAreListed_ReturnsCanonicalRegistry()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-list-projects.db");
+        var store = new SqliteMessageStore(databasePath);
+        await store.InitializeAsync();
+        await store.AddProjectAsync(new("Moyai", "Moyai", "project-inbox-moyai"));
+
+        var result = await RunMcpAsync([
+            ToolRequest(1, "list_projects", new { })
+        ], databasePath);
+
+        var project = Assert.Single(StructuredData(result.Output[0]).EnumerateArray());
+        Assert.Equal("moyai", project.GetProperty("projectId").GetString());
+        Assert.Equal("project-inbox-moyai", project.GetProperty("inboxAgentId").GetString());
+        Assert.True(project.GetProperty("enabled").GetBoolean());
     }
 
     [Fact]
@@ -241,6 +288,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("get_auth_status", names);
         Assert.Contains("rotate_auth_token", names);
         Assert.Contains("delete_agent_history", names);
+        Assert.Contains("list_projects", names);
         var deleteHistory = tools.EnumerateArray().Single(tool =>
             tool.GetProperty("name").GetString() == "delete_agent_history");
         Assert.True(deleteHistory.GetProperty("annotations").GetProperty("destructiveHint").GetBoolean());
@@ -270,6 +318,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("message relay", instructions, StringComparison.Ordinal);
         Assert.Contains("ack_message", instructions, StringComparison.Ordinal);
         Assert.Contains("change requests", instructions, StringComparison.Ordinal);
+        Assert.Contains("list_projects", instructions, StringComparison.Ordinal);
+        Assert.Contains("^[a-z][a-z0-9]*$", instructions, StringComparison.Ordinal);
 
         var prompts = result.Output[1].RootElement.GetProperty("result").GetProperty("prompts");
         var guide = prompts.EnumerateArray().Single(prompt =>
@@ -282,6 +332,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("register_agent", text, StringComparison.Ordinal);
         Assert.Contains("idempotency_key", text, StringComparison.Ordinal);
         Assert.Contains("message_type=change_request", text, StringComparison.Ordinal);
+        Assert.Contains("list_projects", text, StringComparison.Ordinal);
+        Assert.Contains("^[a-z][a-z0-9]*$", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -395,12 +447,12 @@ public sealed class ProcessIntegrationTests : IDisposable
         var service = new MessagingService(new SqliteMessageStore(databasePath));
         await service.InitializeAsync();
         await service.RegisterAgentAsync("sender", "test");
-        await service.RegisterAgentAsync("recipient-a", "test");
-        await service.RegisterAgentAsync("recipient-b", "test");
+        await service.RegisterAgentAsync("recipienta", "test");
+        await service.RegisterAgentAsync("recipientb", "test");
 
         var send = await RunAsync("itoguruma",
         [
-            "send", "--from", "sender", "--to", "recipient-a", "--to", "recipient-b",
+            "send", "--from", "sender", "--to", "recipienta", "--to", "recipientb",
             "--provider", "codex", "--thread", "symmetry", "--body", "shared message"
         ], databasePath, string.Empty);
         var history = await RunAsync("itoguruma",
@@ -408,12 +460,37 @@ public sealed class ProcessIntegrationTests : IDisposable
 
         Assert.Equal(0, send.ExitCode);
         Assert.Equal(0, history.ExitCode);
-        Assert.Single(await service.GetMessagesAsync("recipient-a"));
-        Assert.Single(await service.GetMessagesAsync("recipient-b"));
+        Assert.Single(await service.GetMessagesAsync("recipienta"));
+        Assert.Single(await service.GetMessagesAsync("recipientb"));
         using var document = JsonDocument.Parse(history.StandardOutput);
         var message = Assert.Single(document.RootElement.EnumerateArray());
         Assert.Equal("shared message", message.GetProperty("body").GetString());
         Assert.Equal("codex", message.GetProperty("provider").GetString());
+    }
+
+    [Fact]
+    public async Task AgentCli_WhenProjectIdIsInvalid_ReturnsRegisteredProjectCandidates()
+    {
+        var databasePath = Path.Combine(_directory, "cli-invalid-project.db");
+        var service = new MessagingService(new SqliteMessageStore(databasePath));
+        await service.InitializeAsync();
+        await service.RegisterAgentAsync("sender", "test");
+        await service.AddProjectAsync(new("moyai", "Moyai", "project-inbox-moyai"));
+
+        var result = await RunAsync("itoguruma",
+        [
+            "send", "--from", "sender", "--to", "moyai-codex-root",
+            "--provider", "codex", "--thread", "invalid-project", "--body", "blocked"
+        ], databasePath, string.Empty);
+
+        Assert.Equal(2, result.ExitCode);
+        var jsonStart = result.StandardError.IndexOf('{', StringComparison.Ordinal);
+        Assert.True(jsonStart >= 0, result.StandardError);
+        using var document = JsonDocument.Parse(result.StandardError[jsonStart..]);
+        Assert.Equal(ProjectErrorCodes.InvalidProjectId,
+            document.RootElement.GetProperty("error_code").GetString());
+        var candidate = Assert.Single(document.RootElement.GetProperty("candidates").EnumerateArray());
+        Assert.Equal("moyai", candidate.GetProperty("projectId").GetString());
     }
 
     [Fact]

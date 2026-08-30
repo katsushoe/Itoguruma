@@ -53,6 +53,7 @@ itoguruma auth rotate
 | `get_version` | なし | なし | 実行中のItoguruma MCP Serverバージョンを返します。 |
 | `register_agent` | `agent_id`, `agent_type` | `name`, `session_id`, `metadata_json` | Agentを登録またはheartbeat更新します。 |
 | `list_agents` | なし | なし | 登録済みAgentを一覧表示します。 |
+| `list_projects` | なし | なし | 変更を行わず、正規の送信先プロジェクト一覧を返します。 |
 | `unregister_agent` | `agent_id` | なし | Agent登録を削除します。既存メッセージから参照されているAgentは削除できません。 |
 | `delete_agent_history` | `agent_id`, `dry_run` | なし | 関連Message・Deliveryを事前確認またはTransactionで削除します。 |
 | `send_message` | `sender_agent_id`, `provider`, `body`, `thread_id`と宛先 | `reply_to_message_id`, `message_type`, `payload_json`, `idempotency_key` | 1件以上の宛先へ送信します。 |
@@ -70,9 +71,9 @@ itoguruma auth rotate
 
 `send_message`の宛先は、単一宛先なら`recipient`、複数宛先なら`recipients`を使います。`message_type`は`message`、`notification`、`system`、`change_request`のいずれかです。CRは通常メッセージへフォールバックせず、登録済み担当Agentを明示的な宛先に指定します。
 
-宛先がAgentではない場合、`send`／`send_message`は有効な`project_id`を検索します。プロジェクトも未登録なら、送信トランザクション内で宛先名をプロジェクトID兼Inbox Agent IDとして有効なプロジェクトと`project_inbox` Agentを自動登録し、そのまま配送します。無効プロジェクトは`ITG_PROJECT_DISABLED`を返します。明示的なプロジェクト変更はMCPから実行できず、実コンソールで5桁コードを60秒以内、最大3回で再入力する必要があります。入出力リダイレクトや回避オプションは認めません。参照済みプロジェクトの削除は`ITG_PROJECT_REFERENCED`となるため、`disable`を使用します。
+`send`／`send_message`の前に`list_projects`を呼び、大文字小文字非依存で照合した正規Project IDを選択します。宛先はProject IDであり、実行中Agent IDではありません。入力はInvariant lowercaseへ正規化し、`^[a-z][a-z0-9]*$`に一致する必要があります。正しい形式で未登録なら、送信トランザクション内で正規IDをProject ID兼Inbox Agent IDとして有効なプロジェクトと`project_inbox` Agentを自動登録し、そのまま配送します。不正IDは`ITG_PROJECT_ID_INVALID`として、入力値と類似する登録済み候補を最大5件返します。無効プロジェクトは`ITG_PROJECT_DISABLED`を返します。明示的なプロジェクト変更はMCPから実行できず、実コンソールで5桁コードを60秒以内、最大3回で再入力する必要があります。入出力リダイレクトや回避オプションは認めません。参照済みプロジェクトの削除は`ITG_PROJECT_REFERENCED`となるため、`disable`を使用します。
 
-プロジェクトIDは登録時の表記を保持しつつ、大文字小文字を区別せず照合します。Agent IDは従来どおり大文字小文字を区別します。既存IDと大文字小文字だけが異なるプロジェクトは別登録できません。
+Project IDはInvariant lowercaseで保存・返却し、大文字小文字を区別せず照合します。Agent IDは大文字小文字を区別し、送信元識別とInbox leaseに使用します。既存IDと大文字小文字だけが異なるプロジェクトは別登録できません。
 
 参照済みAgentを削除する場合は、最初に`delete_agent_history`を`dry_run=true`で実行し、Message・Delivery・Thread件数を確認します。明示承認後に`dry_run=false`で再実行し、続けて`unregister_agent`を実行します。削除対象は完全一致するAgent IDが送信したMessage、そのMessageへ依存する返信、Agent宛てDeliveryです。全削除を一つのTransactionで行い、Message本文やpayloadを応答・Logへ出しません。監査記録はAgent ID、件数、時刻、Correlation IDだけを保持します。Agent不存在`ITG_AGENT_NOT_FOUND`、Transaction競合、DB障害は別々の構造化エラーです。CLIの実削除ではプロジェクト変更と同じ5桁の対話確認が必要です。
 

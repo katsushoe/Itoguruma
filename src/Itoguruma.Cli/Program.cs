@@ -66,7 +66,20 @@ try
     };
     Console.WriteLine(JsonSerializer.Serialize(result,new JsonSerializerOptions(JsonSerializerDefaults.Web){WriteIndented=true})); return 0;
 }
-catch(Exception ex)
+catch (ProjectOperationException ex)
+{
+    logger.LogError(ex, "[ProjectOperationFailure] The CLI project operation failed.");
+    Console.Error.WriteLine(JsonSerializer.Serialize(new
+    {
+        error_code = ex.ErrorCode,
+        summary = ex.Message,
+        attempted_recipient = ex.AttemptedProjectId,
+        candidates = ex.Candidates,
+        suggested_action = "Run 'itoguruma project list', select the intended canonical Project ID, and retry."
+    }, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+    return 2;
+}
+catch (Exception ex)
 {
     logger.LogError(ex, "[CommandFailure] The CLI command failed.");
     Console.Error.WriteLine(AppLocalization.Text(

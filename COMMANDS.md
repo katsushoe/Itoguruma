@@ -32,6 +32,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | :--- | :--- | :--- |
 | `register_agent` | `agent_id`, `agent_type` | Creates an agent or refreshes its heartbeat. |
 | `list_agents` | None | Returns all persisted agents. |
+| `list_projects` | None | Returns the canonical destination project registry without mutating it. |
 | `unregister_agent` | `agent_id` | Fails while messages reference the agent. |
 | `delete_agent_history` | `agent_id`, `dry_run` | Previews or transactionally deletes associated messages and deliveries. |
 | `send_message` | sender, provider, body, thread, recipient(s) | Returns the persisted message ID; duplicate sender/idempotency-key pairs return the existing logical message. |
@@ -49,9 +50,9 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 `message_type` accepts `message`, `notification`, `system`, or `change_request`. A change request requires a registered explicit recipient, a valid payload, and an existing Markdown file under `inbox/<target_project>/` in the configured CR root.
 
-When a recipient is not an Agent, `send`/`send_message` resolves an enabled matching `project_id`. If the project is also unknown, the send transactionally registers an enabled project and `project_inbox` Agent using the recipient as both IDs, then delivers the message. Disabled projects return `ITG_PROJECT_DISABLED`. Explicit project mutations are unavailable through MCP and require a five-digit interactive-console confirmation (60 seconds, three attempts, no redirected input/output or bypass option). Referenced projects return `ITG_PROJECT_REFERENCED` on deletion; use `disable` instead.
+Before `send`/`send_message`, call `list_projects` and select the canonical destination by ordinal case-insensitive matching. Recipients are Project IDs, not runtime Agent IDs. Each input is normalized with invariant lowercase and must match `^[a-z][a-z0-9]*$`. If a valid Project ID is unknown, the send transactionally registers an enabled project and `project_inbox` Agent using the normalized ID, then delivers the message. Invalid IDs return `ITG_PROJECT_ID_INVALID` with the attempted value and up to five related registered projects. Disabled projects return `ITG_PROJECT_DISABLED`. Explicit project mutations are unavailable through MCP and require a five-digit interactive-console confirmation (60 seconds, three attempts, no redirected input/output or bypass option). Referenced projects return `ITG_PROJECT_REFERENCED` on deletion; use `disable` instead.
 
-Project IDs are matched case-insensitively while preserving the spelling used at registration. Agent IDs remain case-sensitive. A project ID that differs from an existing ID only by case cannot be registered separately.
+Project IDs are stored and returned in invariant lowercase and matched case-insensitively. Agent IDs remain case-sensitive and are used for sender identity and inbox leasing. A Project ID that differs from an existing ID only by case cannot be registered separately.
 
 Before removing a referenced agent, call `delete_agent_history` with `dry_run=true` and review the message, delivery, and thread counts. After explicit approval, call it again with `dry_run=false`, then call `unregister_agent`. The delete includes messages sent by the exact agent ID, replies that depend on those messages, and deliveries addressed to the agent. It runs in one transaction and does not return or log message bodies or payloads. The audit record contains only the agent ID, counts, timestamp, and correlation ID. `ITG_AGENT_NOT_FOUND`, transaction conflict, and database failure are returned separately. The CLI requires the same interactive five-digit confirmation used by project mutations for an actual deletion.
 
@@ -59,7 +60,8 @@ Before removing a referenced agent, call `delete_agent_history` with `dry_run=tr
 
 ```powershell
 itoguruma register --agent codex-main --type codex
-itoguruma send --from codex-main --to claude-main --provider codex --thread review --body "Review requested" --idempotency-key review-1
-itoguruma inbox --agent claude-main --lease-seconds 300
-itoguruma ack --agent claude-main --message <messageId>
+itoguruma project list
+itoguruma send --from codex-main --to moyai --provider codex --thread review --body "Review requested" --idempotency-key review-1
+itoguruma inbox --agent moyai --lease-seconds 300
+itoguruma ack --agent moyai --message <messageId>
 ```

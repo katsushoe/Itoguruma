@@ -16,7 +16,7 @@ Messages can contain sensitive text and remain in SQLite after acknowledgement. 
 
 Agent-history deletion is destructive and restricted to an exact, case-sensitive agent ID. Always review a dry-run before an explicitly approved deletion. The operation is authenticated like every MCP request, executes in one SQLite transaction, returns only counts and a correlation ID, and never returns or logs message bodies or payloads. CLI deletion additionally requires interactive five-digit confirmation.
 
-The SQLite project registry records routing destinations. An authenticated send to an unknown recipient automatically registers an enabled project and inbox using that recipient ID, so project presence is not an authorization boundary. MCP has no general project mutation tools. Explicit CLI mutations require re-entry of a random five-digit code through non-redirected console input within 60 seconds, with three attempts. Codes and entered values are not logged.
+The SQLite project registry records routing destinations. An authenticated send to an unknown valid Project ID automatically registers an enabled project and inbox using its invariant-lowercase ID, so project presence is not an authorization boundary. Invalid IDs are rejected and may return only non-secret project registry metadata as correction candidates. MCP exposes read-only project listing but no general project mutation tools. Explicit CLI mutations require re-entry of a random five-digit code through non-redirected console input within 60 seconds, with three attempts. Codes and entered values are not logged.
 
 ## Reporting vulnerabilities
 
