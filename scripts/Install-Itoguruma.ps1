@@ -356,7 +356,11 @@ try {
         -Settings $taskSettings `
         -Description "Run the per-user Itoguruma MCP Streamable HTTP server." `
         -Force | Out-Null
-    Start-ScheduledTask -TaskName $taskName
+    $serverProcess = Start-Process `
+        -FilePath $serverPath `
+        -WorkingDirectory (Split-Path $serverPath) `
+        -WindowStyle Hidden `
+        -PassThru
     $healthUrl = $ServerUrl.TrimEnd("/") + "/health"
     $serverReady = $false
     for ($attempt = 1; $attempt -le 20; $attempt++) {
@@ -373,8 +377,8 @@ try {
         Start-Sleep -Milliseconds 250
     }
     if (!$serverReady) { throw "Itoguruma.Server health check failed: $healthUrl" }
-    $task = Get-ScheduledTask -TaskName $taskName
-    if ($task.State -ne "Running") { throw "ItogurumaServer scheduled task is not running." }
+    $serverProcess.Refresh()
+    if ($serverProcess.HasExited) { throw "Itoguruma.Server exited after installation." }
 
     Write-Host ((Get-LocalizedText "Itoguruma installed" "Itogurumaをインストールしました") + ": $destinationRoot")
     Write-Host ((Get-LocalizedText "Configuration" "設定") + ": $configRoot")

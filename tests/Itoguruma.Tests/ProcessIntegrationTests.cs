@@ -579,6 +579,18 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Installer_WhenStartingServer_UsesCurrentConfiguredEnvironment()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
+
+        Assert.Contains("$serverProcess = Start-Process", installer, StringComparison.Ordinal);
+        Assert.Contains("-FilePath $serverPath", installer, StringComparison.Ordinal);
+        Assert.Contains("if ($serverProcess.HasExited)", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("Start-ScheduledTask -TaskName $taskName", installer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task McpServer_WhenDatabaseIsAlreadyInUse_SecondProcessExits()
     {
         var databasePath = Path.Combine(_directory, "single-instance.db");
