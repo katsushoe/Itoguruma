@@ -33,7 +33,7 @@ public sealed class ProjectRegistryTests : IDisposable
 
         Assert.Single(await store.ListProjectsAsync());
         Assert.Equal("body", Assert.Single(await store.GetMessagesAsync("project-inbox-kotodama")).Body);
-        Assert.Equal("Kotodama", (await store.GetProjectAsync("kotodama"))!.ProjectId);
+        Assert.Equal("kotodama", (await store.GetProjectAsync("kotodama"))!.ProjectId);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class ProjectRegistryTests : IDisposable
         var updated = await store.UpdateProjectAsync(new("KOTODAMA", "After"));
         var disabled = await store.SetProjectEnabledAsync("kotodama", false);
 
-        Assert.Equal("Kotodama", updated.ProjectId);
+        Assert.Equal("kotodama", updated.ProjectId);
         Assert.Equal("After", updated.DisplayName);
         Assert.False(disabled.Enabled);
         Assert.True(await store.DeleteProjectAsync("KoToDaMa"));
@@ -73,11 +73,11 @@ public sealed class ProjectRegistryTests : IDisposable
         await store.SendMessageAsync(new("sender", ["Kotodama"], "body", "thread", "codex"));
 
         var project = Assert.Single(await store.ListProjectsAsync());
-        Assert.Equal("Kotodama", project.ProjectId);
-        Assert.Equal("Kotodama", project.DisplayName);
-        Assert.Equal("Kotodama", project.InboxAgentId);
+        Assert.Equal("kotodama", project.ProjectId);
+        Assert.Equal("kotodama", project.DisplayName);
+        Assert.Equal("kotodama", project.InboxAgentId);
         Assert.True(project.Enabled);
-        Assert.Equal("body", Assert.Single(await store.GetMessagesAsync("Kotodama")).Body);
+        Assert.Equal("body", Assert.Single(await store.GetMessagesAsync("kotodama")).Body);
     }
 
     [Fact]
@@ -92,6 +92,10 @@ public sealed class ProjectRegistryTests : IDisposable
             store.SendMessageAsync(new("sender", ["Kotodama"], "body", "thread", "codex")));
 
         Assert.Equal(ProjectErrorCodes.DisabledProject, exception.ErrorCode);
+        Assert.Equal("Kotodama", exception.AttemptedProjectId);
+        var candidate = Assert.Single(exception.Candidates);
+        Assert.Equal("kotodama", candidate.ProjectId);
+        Assert.False(candidate.Enabled);
         Assert.DoesNotContain(await store.ListAgentsAsync(), agent => agent.AgentType == "project_inbox");
     }
 
@@ -120,7 +124,71 @@ public sealed class ProjectRegistryTests : IDisposable
 
         Assert.Single(await store.ListProjectsAsync());
         Assert.Single(await store.ListAgentsAsync(), agent => agent.AgentType == "project_inbox");
-        Assert.Equal(12, (await store.GetMessagesAsync("Kotodama", limit: 50)).Count);
+        Assert.Equal(12, (await store.GetMessagesAsync("kotodama", limit: 50)).Count);
+    }
+
+    [Theory]
+    [InlineData("Itoguruma", "itoguruma")]
+    [InlineData("moyai2", "moyai2")]
+    public void ProjectIdPolicy_WhenInputUsesSupportedCharacters_NormalizesAndValidates(
+        string input,
+        string expected)
+    {
+        Assert.Equal(expected, ProjectIdPolicy.Normalize(input));
+        Assert.True(ProjectIdPolicy.IsValid(expected));
+    }
+
+    [Theory]
+    [InlineData("moyai-codex-root")]
+    [InlineData("moyai_root")]
+    [InlineData("2moyai")]
+    [InlineData("もやい")]
+    public void ProjectIdPolicy_WhenInputViolatesContract_ReturnsInvalid(string input)
+    {
+        Assert.False(ProjectIdPolicy.IsValid(ProjectIdPolicy.Normalize(input)));
+    }
+
+    [Fact]
+    public void ProjectIdPolicy_WhenProjectsAreUnrelated_ReturnsNoCandidates()
+    {
+        var now = DateTimeOffset.Parse(
+            "2026-08-30T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+        Project[] projects = [new("itoguruma", "Itoguruma", "itoguruma", true, now, now)];
+
+        var candidates = ProjectIdPolicy.FindCandidates("completely-different", projects);
+
+        Assert.Empty(candidates);
+    }
+
+    [Fact]
+    public async Task SendMessage_WhenProjectIdContainsHyphens_ReturnsCandidatesWithoutRegisteringProject()
+    {
+        var store = await CreateStoreAsync();
+        await store.RegisterAgentAsync("sender", "test");
+        await store.AddProjectAsync(new("moyai", "Moyai", "project-inbox-moyai"));
+
+        var exception = await Assert.ThrowsAsync<ProjectOperationException>(() =>
+            store.SendMessageAsync(new("sender", ["moyai-codex-root"], "body", "thread", "codex")));
+
+        Assert.Equal(ProjectErrorCodes.InvalidProjectId, exception.ErrorCode);
+        Assert.Equal("moyai-codex-root", exception.AttemptedProjectId);
+        Assert.Equal("moyai", Assert.Single(exception.Candidates).ProjectId);
+        Assert.Single(await store.ListProjectsAsync());
+        Assert.Empty(await store.GetMessagesAsync("project-inbox-moyai"));
+    }
+
+    [Fact]
+    public async Task SendMessage_WhenRuntimeAgentMatchesInvalidProjectId_RejectsRecipient()
+    {
+        var store = await CreateStoreAsync();
+        await store.RegisterAgentAsync("sender", "test");
+        await store.RegisterAgentAsync("moyai-codex-root", "codex");
+
+        var exception = await Assert.ThrowsAsync<ProjectOperationException>(() =>
+            store.SendMessageAsync(new("sender", ["moyai-codex-root"], "body", "thread", "codex")));
+
+        Assert.Equal(ProjectErrorCodes.InvalidProjectId, exception.ErrorCode);
+        Assert.Empty(await store.GetMessagesAsync("moyai-codex-root"));
     }
 
     public void Dispose()

@@ -220,7 +220,7 @@ public sealed class MessagingStoreTests : IDisposable
 
         var result = await store.DeleteAgentHistoryAsync("target", false);
 
-        Assert.False(result.DryRun); Assert.Equal(2, result.MessageCount); Assert.Equal(3, result.DeliveryCount);
+        Assert.False(result.DryRun); Assert.Equal(2, result.MessageCount); Assert.Equal(4, result.DeliveryCount);
         Assert.Empty(await store.GetConversationHistoryAsync("related"));
         Assert.Single(await store.GetConversationHistoryAsync("inbound"));
         Assert.Equal(2, (await store.GetConversationHistoryAsync("unrelated")).Count);
@@ -235,7 +235,7 @@ public sealed class MessagingStoreTests : IDisposable
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync()); Assert.Equal("target", reader.GetString(0));
         Assert.Equal(result.CorrelationId, reader.GetString(1)); Assert.Equal(2, reader.GetInt32(2));
-        Assert.Equal(3, reader.GetInt32(3)); Assert.Equal(2, reader.GetInt32(4));
+        Assert.Equal(4, reader.GetInt32(3)); Assert.Equal(3, reader.GetInt32(4));
     }
 
     [Fact]

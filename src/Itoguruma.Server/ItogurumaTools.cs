@@ -15,6 +15,9 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
 
     private const string SendMessageDescription = """
         Persist and enqueue a message idempotently.
+        Before sending, call list_projects and select the canonical destination Project ID using ordinal
+        case-insensitive matching. Project IDs are normalized with invariant lowercase and must match
+        ^[a-z][a-z0-9]*$. Valid unknown Project IDs are automatically registered.
 
         Error category catalog:
         | Category | Meaning | Recommended response |
@@ -23,7 +26,7 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         | `validation/argument` | A parameter value is missing or invalid (e.g. no recipient, unsupported `message_type`, malformed `payload_json`). | Fix the parameter named in the error and retry. |
         | `validation/provider` | The required provider is missing or invalid. | Supply the sender provider using lowercase ASCII letters, digits, or hyphens, then retry with the same `idempotency_key`. |
         | `validation/change_request` | A CR path, payload field, canonical file field, or status is invalid or inconsistent. | Correct the CR payload or canonical file; do not fall back to a normal message. |
-        | `validation/project_recipient` | The recipient is a disabled project. | Enable the project through the interactive CLI, then retry. |
+        | `validation/project_recipient` | The recipient Project ID is malformed or the project is disabled. | Use list_projects, select the canonical Project ID, and retry with the same `idempotency_key`. |
         | `internal` | The operation failed for an unclassified internal reason. | Inspect the error content before retrying. |
         """;
 
@@ -46,6 +49,12 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
     [Description("List registered agents.")]
     public async Task<ToolData<IReadOnlyList<Agent>>> ListAgents(CancellationToken cancellationToken = default) =>
         new(await service.ListAgentsAsync(cancellationToken));
+
+    /// <summary>登録済みプロジェクトを返します。</summary>
+    [McpServerTool(Name = "list_projects", ReadOnly = true, UseStructuredContent = true)]
+    [Description("List registered message destination projects. Call this before send_message and select the canonical Project ID.")]
+    public async Task<ToolData<IReadOnlyList<Project>>> ListProjects(CancellationToken cancellationToken = default) =>
+        new(await service.ListProjectsAsync(cancellationToken));
 
     /// <summary>エージェント登録を削除します。</summary>
     [McpServerTool(Name = "unregister_agent", UseStructuredContent = true)]
@@ -134,7 +143,7 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
                 "reference_not_found",
                 "sqlite/table/write/reference_key",
                 "Itoguruma rejected the message because a referenced sender, recipient, or reply target does not exist.",
-                "Register every sender and recipient agent, verify reply_to_message_id when supplied, then retry with the same idempotency_key.",
+                "Register the sender agent, verify reply_to_message_id when supplied, then retry with the same idempotency_key.",
                 true), isError: true);
         }
         catch (ProviderValidationException exception)
@@ -148,12 +157,14 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         }
         catch (ProjectOperationException exception)
         {
-            return CreateResult(new ToolError(
+            return CreateResult(new ProjectRecipientToolError(
                 exception.ErrorCode,
                 "validation/project_recipient",
                 exception.Message,
-                "Enable the project through the interactive Itoguruma CLI, then retry with the same idempotency_key.",
-                true), isError: true);
+                "Call list_projects, select the intended canonical Project ID, and retry with the same idempotency_key.",
+                true,
+                exception.AttemptedProjectId,
+                exception.Candidates), isError: true);
         }
         catch (ArgumentException exception)
         {
@@ -309,3 +320,13 @@ public sealed record ToolError(
     string Summary,
     string SuggestedAction,
     bool Retryable);
+
+/// <summary>宛先Project IDの修正候補を含むツールエラーです。</summary>
+public sealed record ProjectRecipientToolError(
+    string ErrorCode,
+    string Category,
+    string Summary,
+    string SuggestedAction,
+    bool Retryable,
+    string? AttemptedRecipient,
+    IReadOnlyList<ProjectCandidate> Candidates);
