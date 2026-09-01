@@ -47,7 +47,9 @@ try
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
     var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT");
     var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
-    var service = new MessagingService(new SqliteMessageStore(db), changeRequestValidator);
+    var service = new MessagingService(
+        new SqliteMessageStore(db, logger: loggerFactory.CreateLogger<SqliteMessageStore>()),
+        changeRequestValidator);
     await service.InitializeAsync();
     if (arguments[0] == "project") return await RunProjectAsync(service);
     if (arguments[0] == "hook") return await RunHookAsync(service, Required("--agent"));

@@ -1,11 +1,15 @@
 using System.Data;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Itoguruma.Core;
 
-public sealed class SqliteMessageStore(string databasePath, TimeProvider? timeProvider = null) : IMessageStore
+public sealed class SqliteMessageStore(string databasePath, TimeProvider? timeProvider = null,
+    ILogger<SqliteMessageStore>? logger = null) : IMessageStore
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly ILogger<SqliteMessageStore> _logger = logger ?? NullLogger<SqliteMessageStore>.Instance;
     private string ConnectionString => new SqliteConnectionStringBuilder
     {
         DataSource = databasePath,
@@ -324,7 +328,13 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
                 Add(existing, "$sender", request.SenderAgentId); Add(existing, "$key", request.IdempotencyKey);
                 if (await existing.ExecuteScalarAsync(cancellationToken) is string existingId)
                 {
+                    var existingRecipients = await GetDeliveryRecipientsAsync(
+                        connection, (SqliteTransaction)transaction, existingId, cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
+                    _logger.LogInformation(
+                        "[Messaging][Send][IdempotentReplay] Message {MessageId} reused for sender {SenderAgentId}, thread {ThreadId}; persisted recipients {ResolvedRecipients}; requested projects {RequestedRecipients}",
+                        existingId, request.SenderAgentId, request.ThreadId, string.Join(',', existingRecipients),
+                        string.Join(',', request.Recipients));
                     return existingId;
                 }
             }
@@ -350,10 +360,17 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
                     Add(existing, "$sender", request.SenderAgentId); Add(existing, "$key", request.IdempotencyKey);
                     var existingId = (string?)await existing.ExecuteScalarAsync(cancellationToken)
                         ?? throw new InvalidOperationException("Idempotent message could not be resolved.");
+                    var existingRecipients = await GetDeliveryRecipientsAsync(
+                        connection, (SqliteTransaction)transaction, existingId, cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
+                    _logger.LogInformation(
+                        "[Messaging][Send][IdempotentReplay] Message {MessageId} reused for sender {SenderAgentId}, thread {ThreadId}; persisted recipients {ResolvedRecipients}; requested projects {RequestedRecipients}",
+                        existingId, request.SenderAgentId, request.ThreadId, string.Join(',', existingRecipients),
+                        string.Join(',', request.Recipients));
                     return existingId;
                 }
             }
+            var resolvedRecipients = new List<string>();
             foreach (var recipient in request.Recipients.Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 RequireText(recipient, nameof(request.Recipients));
@@ -364,11 +381,23 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
                 delivery.CommandText = "INSERT INTO message_deliveries(message_id,recipient_agent_id,status) VALUES($id,$recipient,'pending')";
                 Add(delivery, "$id", messageId); Add(delivery, "$recipient", resolvedRecipient);
                 await delivery.ExecuteNonQueryAsync(cancellationToken);
+                resolvedRecipients.Add(resolvedRecipient);
             }
             await transaction.CommitAsync(cancellationToken);
+            _logger.LogInformation(
+                "[Messaging][Send] Message {MessageId} queued from {SenderAgentId} to {ResolvedRecipients}; requested projects {RequestedRecipients}; thread {ThreadId}; type {MessageType}",
+                messageId, request.SenderAgentId, string.Join(',', resolvedRecipients),
+                string.Join(',', request.Recipients), request.ThreadId, request.MessageType);
             return messageId;
         }
-        catch { await transaction.RollbackAsync(CancellationToken.None); throw; }
+        catch (Exception exception)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            _logger.LogError(exception,
+                "[Messaging][Send][Failure] Message queueing failed from {SenderAgentId}; requested projects {RequestedRecipients}; thread {ThreadId}; type {MessageType}",
+                request.SenderAgentId, string.Join(',', request.Recipients), request.ThreadId, request.MessageType);
+            throw;
+        }
     }
 
     public async Task<IReadOnlyList<Message>> GetMessagesAsync(string agentId, int limit = 50,
@@ -411,7 +440,24 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             if (await reader.ReadAsync(cancellationToken)) messages.Add(ReadMessage(reader));
         }
         await transaction.CommitAsync(cancellationToken);
+        _logger.LogInformation(
+            "[Messaging][Lease] Agent {AgentId} leased {MessageCount} messages {MessageIds}; thread filter {ThreadId}; type filter {MessageType}; lease until {LeaseUntil}",
+            agentId, messages.Count, string.Join(',', messages.Select(message => message.MessageId)),
+            threadId, messageType, leaseUntil);
         return messages.OrderBy(x => x.CreatedAt).ToArray();
+    }
+
+    private static async Task<IReadOnlyList<string>> GetDeliveryRecipientsAsync(SqliteConnection connection,
+        SqliteTransaction transaction, string messageId, CancellationToken cancellationToken)
+    {
+        var recipients = new List<string>();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT recipient_agent_id FROM message_deliveries WHERE message_id=$id ORDER BY recipient_agent_id";
+        Add(command, "$id", messageId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) recipients.Add(reader.GetString(0));
+        return recipients;
     }
 
     public async Task<IReadOnlyList<ConversationMessage>> GetConversationHistoryAsync(string threadId, int limit = 100,
@@ -446,7 +492,11 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             WHERE message_id=$message AND recipient_agent_id=$agent AND status='leased';
             """;
         Add(command, "$now", now); Add(command, "$message", messageId); Add(command, "$agent", agentId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        var acknowledged = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        _logger.LogInformation(
+            "[Messaging][Ack] Agent {AgentId} acknowledgement for message {MessageId}: {Acknowledged}",
+            agentId, messageId, acknowledged);
+        return acknowledged;
     }
 
     public async Task<Project> AddProjectAsync(ProjectMutation mutation, CancellationToken cancellationToken = default)

@@ -80,9 +80,9 @@ static async Task<int> RunServerAsync(string[] args)
     var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT")
         ?? builder.Configuration["Itoguruma:CrRoot"];
     var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
-    var messagingService = new MessagingService(new SqliteMessageStore(databasePath), changeRequestValidator);
-    await messagingService.InitializeAsync();
-    builder.Services.AddSingleton(messagingService);
+    builder.Services.AddSingleton(provider => new MessagingService(
+        new SqliteMessageStore(databasePath, logger: provider.GetRequiredService<ILogger<SqliteMessageStore>>()),
+        changeRequestValidator));
     builder.Services.AddSingleton<IUserTokenStore, UserEnvironmentTokenStore>();
     builder.Services.AddSingleton<AuthenticationTokenService>();
     builder.Services
@@ -96,6 +96,7 @@ static async Task<int> RunServerAsync(string[] args)
         .WithPrompts<ItogurumaPrompts>();
 
     var app = builder.Build();
+    await app.Services.GetRequiredService<MessagingService>().InitializeAsync();
     app.Logger.LogInformation(AppLocalization.Text("[Startup] Itoguruma server starting at {ServerUrl}", "[起動] Itogurumaサーバーを開始します: {ServerUrl}"), serverUrl);
     app.Use(async (context, next) =>
     {

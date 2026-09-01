@@ -6,6 +6,8 @@
 
 インストーラは `Itoguruma.Language` を `config/appsettings.json` に保存します。対応値は `en` と `ja` です。Viewer UI、アプリケーションログ、コンソールメッセージはこの設定を使用します。無人インストールでは `-Language en` または `-Language ja` を指定します。省略時はインストーラで言語を選択します。
 
+メッセージ診断は、本文、payload、認証情報を含めずサーバーログへ記録します。`[Messaging][Send]` はメッセージID、送信者、指定されたProject ID、解決後のInbox Agent ID、Thread、種類を記録します。`[Messaging][Lease]` はInbox Agent ID、取得したメッセージID、フィルター、リース期限を0件の場合も記録します。`[Messaging][Ack]` はInbox Agent ID、メッセージID、ACK結果を記録します。これらを照合すると、経路解決、リース、ACKのどの段階で問題が起きたか判別できます。
+
 ## 解決順と配置
 
 環境変数は`src/Itoguruma.Server/appsettings.json`より優先されます。インストーラが生成する実行時ファイルは、別のインストール先を指定しない限り`C:\Itoguruma`配下に保存されます。
