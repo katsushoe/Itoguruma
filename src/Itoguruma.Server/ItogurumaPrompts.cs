@@ -31,7 +31,7 @@ public sealed class ItogurumaPrompts
         Use Itoguruma to coordinate independent AI agents across project boundaries.
 
         Workflow:
-        1. Call register_agent for runtime agents that send messages or lease an inbox.
+        1. Call register_project_inbox for initial project setup, then call register_agent with its canonical project_id for runtime agents.
         2. Call list_projects and select the canonical destination Project ID using case-insensitive matching.
         3. Call send_message with sender_agent_id, the selected Project ID, the actual provider, body, and a stable thread_id.
         4. The recipient calls get_messages with its inbox Agent ID to lease pending work.

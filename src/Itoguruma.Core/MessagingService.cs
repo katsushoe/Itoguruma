@@ -9,12 +9,22 @@ public sealed class MessagingService(IMessageStore store, ChangeRequestValidator
 
     public Task InitializeAsync(CancellationToken cancellationToken = default) => store.InitializeAsync(cancellationToken);
 
-    public Task<Agent> RegisterAgentAsync(string agentId, string agentType, string? name = null,
+    public Task<Agent> RegisterAgentAsync(string agentId, string agentType, string projectId, string? name = null,
         string? sessionId = null, string? metadataJson = null, CancellationToken cancellationToken = default)
     {
         ValidateJson(metadataJson, nameof(metadataJson));
-        return store.RegisterAgentAsync(agentId, agentType, name, sessionId, metadataJson, cancellationToken);
+        return store.RegisterAgentAsync(agentId, agentType, projectId, name, sessionId, metadataJson, cancellationToken);
     }
+
+    internal Task<Agent> RegisterAgentAsync(string agentId, string agentType,
+        CancellationToken cancellationToken = default) =>
+        store is SqliteMessageStore sqlite
+            ? sqlite.RegisterLegacyAgentAsync(agentId, agentType, cancellationToken)
+            : throw new NotSupportedException("Legacy registration is only available to database compatibility tests.");
+
+    public Task<Project> RegisterProjectInboxAsync(string projectId, string displayName,
+        CancellationToken cancellationToken = default) =>
+        store.RegisterProjectInboxAsync(projectId, displayName, cancellationToken);
 
     public Task<IReadOnlyList<Agent>> ListAgentsAsync(CancellationToken cancellationToken = default) =>
         store.ListAgentsAsync(cancellationToken);

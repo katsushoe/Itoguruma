@@ -1,5 +1,6 @@
 using Itoguruma.Core;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Itoguruma.Tests;
@@ -8,6 +9,40 @@ public sealed class MessagingStoreTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "itoguruma-tests", Guid.NewGuid().ToString("N"));
     private SqliteMessageStore CreateStore() => new(Path.Combine(_directory,"messages.db"));
+
+    [Fact]
+    public async Task MessagingOperations_WhenExecuted_WriteDiagnosticAuditLogs()
+    {
+        var logger = new TestLogger<SqliteMessageStore>();
+        var store = new SqliteMessageStore(Path.Combine(_directory, "audit.db"), logger: logger);
+        await store.InitializeAsync();
+        await store.RegisterAgentAsync("sender", "test");
+        await store.RegisterAgentAsync("recipient", "project_inbox");
+        await store.RegisterAgentAsync("other", "project_inbox");
+
+        var messageId = await store.SendMessageAsync(new(
+            "sender", ["recipient"], "secret body", "audit-thread", "codex", IdempotencyKey: "audit-key"));
+        var replayedMessageId = await store.SendMessageAsync(new(
+            "sender", ["other"], "different secret", "audit-thread", "codex", IdempotencyKey: "audit-key"));
+        var messages = await store.GetMessagesAsync("recipient");
+        var acknowledged = await store.AckMessageAsync("recipient", messageId);
+
+        Assert.Equal(messageId, replayedMessageId);
+        Assert.Single(messages);
+        Assert.True(acknowledged);
+        Assert.Contains(logger.Messages, message => message.Contains("[Messaging][Send]", StringComparison.Ordinal)
+            && message.Contains(messageId, StringComparison.Ordinal)
+            && message.Contains("recipient", StringComparison.Ordinal));
+        Assert.Contains(logger.Messages, message => message.Contains("[Messaging][Lease]", StringComparison.Ordinal)
+            && message.Contains(messageId, StringComparison.Ordinal));
+        Assert.Contains(logger.Messages, message => message.Contains("[Messaging][Ack]", StringComparison.Ordinal)
+            && message.Contains(messageId, StringComparison.Ordinal));
+        Assert.Contains(logger.Messages, message => message.Contains("[Messaging][Send][IdempotentReplay]", StringComparison.Ordinal)
+            && message.Contains("persisted recipients recipient", StringComparison.Ordinal)
+            && message.Contains("requested projects other", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Messages, message => message.Contains("secret body", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Messages, message => message.Contains("different secret", StringComparison.Ordinal));
+    }
 
     [Fact]
     public async Task Message_WhenLeasedAndAcked_IsNotDeliveredAgain()
@@ -377,4 +412,16 @@ public sealed class MessagingStoreTests : IDisposable
     }
 
     public void Dispose() { if(Directory.Exists(_directory)) Directory.Delete(_directory,true); }
+}
+
+internal sealed class TestLogger<T> : ILogger<T>
+{
+    public List<string> Messages { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+        Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
 }

@@ -1,7 +1,7 @@
 namespace Itoguruma.Core;
 
 public sealed record Agent(string AgentId, string Name, string AgentType, string? SessionId,
-    DateTimeOffset CreatedAt, DateTimeOffset LastSeenAt, string? MetadataJson);
+    DateTimeOffset CreatedAt, DateTimeOffset LastSeenAt, string? MetadataJson, string? ProjectId = null);
 
 public sealed record Message(string MessageId, string ThreadId, string SenderAgentId,
     string Provider, string? ReplyToMessageId, string MessageType, string Body, string? PayloadJson,
@@ -43,6 +43,7 @@ public static class ProjectErrorCodes
     public const string DisabledProject = "ITG_PROJECT_DISABLED";
     public const string ProjectReferenced = "ITG_PROJECT_REFERENCED";
     public const string ProjectCaseConflict = "ITG_PROJECT_CASE_CONFLICT";
+    public const string AgentTypeConflict = "ITG_AGENT_TYPE_CONFLICT";
     public const string ConfirmationFailed = "ITG_CONFIRMATION_FAILED";
     public const string ConfirmationExpired = "ITG_CONFIRMATION_EXPIRED";
     public const string ConsoleRedirected = "ITG_CONSOLE_REDIRECTED";

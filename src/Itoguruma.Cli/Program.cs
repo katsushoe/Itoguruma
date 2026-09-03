@@ -47,13 +47,15 @@ try
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
     var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT");
     var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
-    var service = new MessagingService(new SqliteMessageStore(db), changeRequestValidator);
+    var service = new MessagingService(
+        new SqliteMessageStore(db, logger: loggerFactory.CreateLogger<SqliteMessageStore>()),
+        changeRequestValidator);
     await service.InitializeAsync();
     if (arguments[0] == "project") return await RunProjectAsync(service);
     if (arguments[0] == "hook") return await RunHookAsync(service, Required("--agent"));
     object result = arguments[0] switch
     {
-        "register" => await service.RegisterAgentAsync(Required("--agent"), Required("--type"), Option("--name"), Option("--session"), Option("--metadata")),
+        "register" => await service.RegisterAgentAsync(Required("--agent"), Required("--type"), Required("--project"), Option("--name"), Option("--session"), Option("--metadata")),
         "agents" => await service.ListAgentsAsync(),
         "unregister" => new { unregistered = await service.UnregisterAgentAsync(Required("--agent")) },
         "delete-agent-history" => await RunDeleteAgentHistoryAsync(service),

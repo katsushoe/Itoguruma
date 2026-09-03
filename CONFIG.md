@@ -6,6 +6,8 @@
 
 The installer stores `Itoguruma.Language` in `config/appsettings.json`. Supported values are `en` and `ja`. The Viewer UI, application logs, and console messages use this setting. Run the installer with `-Language en` or `-Language ja` for unattended installation; when omitted, the installer prompts for a language.
 
+Message diagnostics are written to the server log without message bodies, payloads, or authentication data. `[Messaging][Send]` records the message ID, sender, requested Project IDs, resolved inbox Agent IDs, thread, and type. `[Messaging][Lease]` records the inbox Agent ID, selected message IDs, filters, and lease expiry, including zero-message results. `[Messaging][Ack]` records the inbox Agent ID, message ID, and acknowledgement result. Use these events together to distinguish routing, leasing, and acknowledgement failures.
+
 ## Resolution and locations
 
 Environment variables override `src/Itoguruma.Server/appsettings.json`. Installer-generated runtime files are stored below `C:\Itoguruma` unless another installation directory is selected.

@@ -25,9 +25,10 @@ public sealed class ProcessIntegrationTests : IDisposable
                 capabilities = new { },
                 clientInfo = new { name = "itoguruma-tests", version = "1.0" }
             }),
-            ToolRequest(2, "register_agent", new { agent_id = "sender", agent_type = "test" }),
-            ToolRequest(3, "register_agent", new { agent_id = "recipient", agent_type = "test" }),
-            ToolRequest(4, "send_message", new
+            ToolRequest(2, "register_project_inbox", new { project_id = "testproject", display_name = "Test Project" }),
+            ToolRequest(3, "register_agent", new { agent_id = "sender", agent_type = "test", project_id = "testproject" }),
+            ToolRequest(4, "register_agent", new { agent_id = "recipient", agent_type = "test", project_id = "testproject" }),
+            ToolRequest(5, "send_message", new
             {
                 sender_agent_id = "sender",
                 recipient = "recipient",
@@ -35,17 +36,17 @@ public sealed class ProcessIntegrationTests : IDisposable
                 body = "integration message",
                 thread_id = "integration"
             }),
-            ToolRequest(5, "get_messages", new { agent_id = "recipient" })
+            ToolRequest(6, "get_messages", new { agent_id = "recipient" })
         };
 
         var result = await RunMcpAsync(requests, databasePath);
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal(5, result.Output.Count);
+        Assert.Equal(6, result.Output.Count);
         Assert.All(result.Output, response => Assert.False(response.RootElement.TryGetProperty("error", out _)));
         Assert.Equal(ProductInfo.Version, result.Output[0].RootElement.GetProperty("result")
             .GetProperty("serverInfo").GetProperty("version").GetString());
-        var messages = StructuredData(result.Output[4]);
+        var messages = StructuredData(result.Output[5]);
         var message = Assert.Single(messages.EnumerateArray());
         Assert.Equal("integration message", message.GetProperty("body").GetString());
         Assert.Equal("codex", message.GetProperty("provider").GetString());
@@ -67,8 +68,9 @@ public sealed class ProcessIntegrationTests : IDisposable
         var databasePath = Path.Combine(_directory, "mcp-history.db");
         var requests = new[]
         {
-            ToolRequest(1, "register_agent", new { agent_id = "sender", agent_type = "test" }),
-            ToolRequest(2, "register_agent", new { agent_id = "recipient", agent_type = "test" }),
+            ToolRequest(0, "register_project_inbox", new { project_id = "testproject", display_name = "Test Project" }),
+            ToolRequest(1, "register_agent", new { agent_id = "sender", agent_type = "test", project_id = "testproject" }),
+            ToolRequest(2, "register_agent", new { agent_id = "recipient", agent_type = "test", project_id = "testproject" }),
             ToolRequest(3, "send_message", new
             {
                 sender_agent_id = "sender", recipient = "recipient", provider = "codex",
@@ -85,7 +87,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var result = await RunMcpAsync(requests, databasePath);
 
         Assert.Equal(0, result.ExitCode);
-        var history = StructuredData(result.Output[4]).EnumerateArray().ToArray();
+        var history = StructuredData(result.Output[5]).EnumerateArray().ToArray();
         Assert.Equal(2, history.Length);
         Assert.Equal("first", history[0].GetProperty("body").GetString());
         Assert.Equal("codex", history[0].GetProperty("provider").GetString());
@@ -110,8 +112,9 @@ public sealed class ProcessIntegrationTests : IDisposable
     {
         var databasePath = Path.Combine(_directory, "mcp-agent-history.db");
         var result = await RunMcpAsync([
-            ToolRequest(1, "register_agent", new { agent_id = "target", agent_type = "test" }),
-            ToolRequest(2, "register_agent", new { agent_id = "other", agent_type = "test" }),
+            ToolRequest(0, "register_project_inbox", new { project_id = "testproject", display_name = "Test Project" }),
+            ToolRequest(1, "register_agent", new { agent_id = "target", agent_type = "test", project_id = "testproject" }),
+            ToolRequest(2, "register_agent", new { agent_id = "other", agent_type = "test", project_id = "testproject" }),
             ToolRequest(3, "send_message", new
             {
                 sender_agent_id = "target", recipient = "other", provider = "codex",
@@ -122,12 +125,12 @@ public sealed class ProcessIntegrationTests : IDisposable
             ToolRequest(6, "unregister_agent", new { agent_id = "target" })
         ], databasePath);
 
-        var preview = StructuredData(result.Output[3]);
-        var deleted = StructuredData(result.Output[4]);
+        var preview = StructuredData(result.Output[4]);
+        var deleted = StructuredData(result.Output[5]);
         Assert.True(preview.GetProperty("dryRun").GetBoolean());
         Assert.Equal(1, preview.GetProperty("messageCount").GetInt32());
         Assert.False(deleted.GetProperty("dryRun").GetBoolean());
-        Assert.True(StructuredData(result.Output[5]).GetProperty("unregistered").GetBoolean());
+        Assert.True(StructuredData(result.Output[6]).GetProperty("unregistered").GetBoolean());
         Assert.DoesNotContain("secret-body", result.Output[3].RootElement.GetRawText(), StringComparison.Ordinal);
         Assert.DoesNotContain("secret-body", result.Output[4].RootElement.GetRawText(), StringComparison.Ordinal);
     }
@@ -138,7 +141,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         var databasePath = Path.Combine(_directory, "mcp-error.db");
         var requests = new[]
         {
-            ToolRequest(1, "register_agent", new { agent_id = "sender", agent_type = "test" }),
+            ToolRequest(0, "register_project_inbox", new { project_id = "testproject", display_name = "Test Project" }),
+            ToolRequest(1, "register_agent", new { agent_id = "sender", agent_type = "test", project_id = "testproject" }),
             ToolRequest(2, "send_message", new
             {
                 sender_agent_id = "sender",
@@ -154,8 +158,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         var result = await RunMcpAsync(requests, databasePath);
 
         Assert.Equal(0, result.ExitCode);
-        Assert.False(result.Output[1].RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
-        var message = Assert.Single(StructuredData(result.Output[2]).EnumerateArray());
+        Assert.False(result.Output[2].RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
+        var message = Assert.Single(StructuredData(result.Output[3]).EnumerateArray());
         Assert.Equal("integration message", message.GetProperty("body").GetString());
     }
 
@@ -207,6 +211,28 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpServer_RegisterProjectInbox_ReflectsGithubieSelfTestInBothLists()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-register-project-inbox.db");
+        var result = await RunMcpAsync([
+            ToolRequest(1, "register_project_inbox", new
+                { project_id = "GithubieSelfTest", display_name = "Githubie Self Test" }),
+            ToolRequest(2, "register_project_inbox", new
+                { project_id = "githubieselftest", display_name = "Githubie Self Test" }),
+            ToolRequest(3, "list_projects", new { }),
+            ToolRequest(4, "list_agents", new { })
+        ], databasePath);
+
+        Assert.All(result.Output, response => Assert.False(response.RootElement.TryGetProperty("error", out _)));
+        var project = Assert.Single(StructuredData(result.Output[2]).EnumerateArray());
+        var agent = Assert.Single(StructuredData(result.Output[3]).EnumerateArray());
+        Assert.Equal("githubieselftest", project.GetProperty("projectId").GetString());
+        Assert.Equal("githubieselftest", agent.GetProperty("agentId").GetString());
+        Assert.Equal("githubieselftest", agent.GetProperty("projectId").GetString());
+        Assert.Equal("project_inbox", agent.GetProperty("agentType").GetString());
+    }
+
+    [Fact]
     public async Task McpServer_WhenProviderIsInvalid_ReturnsProviderErrorWithoutPersistingMessage()
     {
         var databasePath = Path.Combine(_directory, "mcp-provider-error.db");
@@ -237,7 +263,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         var databasePath = Path.Combine(_directory, "mcp-no-recipient.db");
         var requests = new[]
         {
-            ToolRequest(1, "register_agent", new { agent_id = "sender", agent_type = "test" }),
+            ToolRequest(0, "register_project_inbox", new { project_id = "testproject", display_name = "Test Project" }),
+            ToolRequest(1, "register_agent", new { agent_id = "sender", agent_type = "test", project_id = "testproject" }),
             ToolRequest(2, "send_message", new
             {
                 sender_agent_id = "sender",
@@ -250,7 +277,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var result = await RunMcpAsync(requests, databasePath);
 
         Assert.Equal(0, result.ExitCode);
-        var toolResult = result.Output[1].RootElement.GetProperty("result");
+        var toolResult = result.Output[2].RootElement.GetProperty("result");
         Assert.True(toolResult.TryGetProperty("isError", out var isError), toolResult.GetRawText());
         Assert.True(isError.GetBoolean());
         using var errorDocument = JsonDocument.Parse(
@@ -289,6 +316,10 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("rotate_auth_token", names);
         Assert.Contains("delete_agent_history", names);
         Assert.Contains("list_projects", names);
+        Assert.Contains("register_project_inbox", names);
+        var registerAgent = tools.EnumerateArray().Single(tool => tool.GetProperty("name").GetString() == "register_agent");
+        Assert.Contains(registerAgent.GetProperty("inputSchema").GetProperty("required").EnumerateArray(),
+            item => item.GetString() == "project_id");
         var deleteHistory = tools.EnumerateArray().Single(tool =>
             tool.GetProperty("name").GetString() == "delete_agent_history");
         Assert.True(deleteHistory.GetProperty("annotations").GetProperty("destructiveHint").GetBoolean());
