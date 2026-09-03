@@ -3,8 +3,10 @@ namespace Itoguruma.Core;
 public interface IMessageStore
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);
-    Task<Agent> RegisterAgentAsync(string agentId, string agentType, string? name = null,
+    Task<Agent> RegisterAgentAsync(string agentId, string agentType, string projectId, string? name = null,
         string? sessionId = null, string? metadataJson = null, CancellationToken cancellationToken = default);
+    Task<Project> RegisterProjectInboxAsync(string projectId, string displayName,
+        CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Agent>> ListAgentsAsync(CancellationToken cancellationToken = default);
     Task<bool> UnregisterAgentAsync(string agentId, CancellationToken cancellationToken = default);
     Task<AgentHistoryDeleteResult> DeleteAgentHistoryAsync(string agentId, bool dryRun,

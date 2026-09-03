@@ -10,8 +10,8 @@ Itogurumaは、Claude CodeやCodexなどの独立したAIエージェントが�
 
 ```powershell
 msiexec /i .\Itoguruma-x.x.x-win-x64.msi
-itoguruma register --agent codex-main --type codex
-itoguruma register --agent claude-main --type claude-code
+itoguruma register --agent codex-main --type codex --project itoguruma
+itoguruma register --agent claude-main --type claude-code --project itoguruma
 itoguruma send --from codex-main --to claude-main --provider codex --thread setup --body "Hello" --idempotency-key setup-1
 itoguruma inbox --agent claude-main --lease-seconds 300
 ```

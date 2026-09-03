@@ -3,4 +3,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.20" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Itoguruma.Tests" />
+  </ItemGroup>
 </Project>

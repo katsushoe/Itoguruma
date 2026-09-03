@@ -30,7 +30,8 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 | Tool | Required input | State-dependent result |
 | :--- | :--- | :--- |
-| `register_agent` | `agent_id`, `agent_type` | Creates an agent or refreshes its heartbeat. |
+| `register_agent` | `agent_id`, `agent_type`, `project_id` | Creates an agent or refreshes its heartbeat after validating an enabled parent project. |
+| `register_project_inbox` | `project_id`, `display_name` | Atomically and idempotently registers or updates a project and its inbox agent. |
 | `list_agents` | None | Returns all persisted agents. |
 | `list_projects` | None | Returns the canonical destination project registry without mutating it. |
 | `unregister_agent` | `agent_id` | Fails while messages reference the agent. |
@@ -50,6 +51,8 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 `message_type` accepts `message`, `notification`, `system`, or `change_request`. A change request requires a registered explicit recipient, a valid payload, and an existing Markdown file under `inbox/<target_project>/` in the configured CR root.
 
+Before runtime registration, use `register_project_inbox` for initial setup or `list_projects` for an existing parent, then pass the canonical ID as `project_id`. `metadata_json.projectId` is not an integrity source.
+
 Before `send`/`send_message`, call `list_projects` and select the canonical destination by ordinal case-insensitive matching. Recipients are Project IDs, not runtime Agent IDs. Each input is normalized with invariant lowercase and must match `^[a-z][a-z0-9]*$`. If a valid Project ID is unknown, the send transactionally registers an enabled project and `project_inbox` Agent using the normalized ID, then delivers the message. Invalid IDs return `ITG_PROJECT_ID_INVALID` with the attempted value and up to five related registered projects. Disabled projects return `ITG_PROJECT_DISABLED`. Explicit project mutations are unavailable through MCP and require a five-digit interactive-console confirmation (60 seconds, three attempts, no redirected input/output or bypass option). Referenced projects return `ITG_PROJECT_REFERENCED` on deletion; use `disable` instead.
 
 Project IDs are stored and returned in invariant lowercase and matched case-insensitively. Agent IDs remain case-sensitive and are used for sender identity and inbox leasing. A Project ID that differs from an existing ID only by case cannot be registered separately.
@@ -59,7 +62,7 @@ Before removing a referenced agent, call `delete_agent_history` with `dry_run=tr
 ## Examples
 
 ```powershell
-itoguruma register --agent codex-main --type codex
+itoguruma register --agent codex-main --type codex --project itoguruma
 itoguruma project list
 itoguruma send --from codex-main --to moyai --provider codex --thread review --body "Review requested" --idempotency-key review-1
 itoguruma inbox --agent moyai --lease-seconds 300

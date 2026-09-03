@@ -121,6 +121,13 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             ALTER TABLE audit_log ADD COLUMN thread_count INTEGER NULL;
             PRAGMA user_version=7;
             """, cancellationToken);
+            if (version < 8) await ApplyAsync(connection, (SqliteTransaction)transaction, """
+            ALTER TABLE agents ADD COLUMN project_id TEXT NULL REFERENCES projects(project_id);
+            UPDATE agents SET project_id=(SELECT project_id FROM projects WHERE inbox_agent_id=agents.agent_id)
+              WHERE agent_type='project_inbox' AND project_id IS NULL;
+            CREATE INDEX ix_agents_project_id ON agents(project_id);
+            PRAGMA user_version=8;
+            """, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
 
@@ -145,18 +152,31 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         }
     }
 
-    public async Task<Agent> RegisterAgentAsync(string agentId, string agentType, string? name = null,
+    public async Task<Agent> RegisterAgentAsync(string agentId, string agentType, string projectId, string? name = null,
         string? sessionId = null, string? metadataJson = null, CancellationToken cancellationToken = default)
     {
         RequireText(agentId, nameof(agentId)); RequireText(agentType, nameof(agentType));
+        if (string.Equals(agentType, "project_inbox", StringComparison.Ordinal))
+            throw new ProjectOperationException(ProjectErrorCodes.AgentTypeConflict,
+                "Project Inbox agents must be registered with register_project_inbox.", projectId);
+        projectId = NormalizeProjectId(projectId);
         var now = Now();
         await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await EnsureEnabledProjectAsync(connection, transaction, projectId, cancellationToken);
+        await using var existing = connection.CreateCommand(); existing.Transaction = transaction;
+        existing.CommandText = "SELECT agent_type FROM agents WHERE agent_id=$id"; Add(existing, "$id", agentId);
+        if (await existing.ExecuteScalarAsync(cancellationToken) is string existingType
+            && !string.Equals(existingType, agentType, StringComparison.Ordinal))
+            throw new ProjectOperationException(ProjectErrorCodes.AgentTypeConflict,
+                "The agent ID is already registered with a different agent type.", projectId);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO agents(agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json)
-            VALUES($id,$name,$type,$session,$now,$now,$metadata)
+            INSERT INTO agents(agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json,project_id)
+            VALUES($id,$name,$type,$session,$now,$now,$metadata,$project)
             ON CONFLICT(agent_id) DO UPDATE SET name=$name, agent_type=$type,
-              session_id=$session, last_seen_at=$now, metadata_json=$metadata;
+              session_id=$session, last_seen_at=$now, metadata_json=$metadata, project_id=$project;
             """;
         command.Parameters.AddWithValue("$id", agentId);
         command.Parameters.AddWithValue("$name", name ?? agentId);
@@ -164,22 +184,96 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         command.Parameters.AddWithValue("$session", (object?)sessionId ?? DBNull.Value);
         command.Parameters.AddWithValue("$now", Format(now));
         command.Parameters.AddWithValue("$metadata", (object?)metadataJson ?? DBNull.Value);
+        command.Parameters.AddWithValue("$project", projectId);
         await command.ExecuteNonQueryAsync(cancellationToken);
-        return new Agent(agentId, name ?? agentId, agentType, sessionId, now, now, metadataJson);
+        await transaction.CommitAsync(cancellationToken);
+        return new Agent(agentId, name ?? agentId, agentType, sessionId, now, now, metadataJson, projectId);
     }
+
+    internal async Task<Agent> RegisterLegacyAgentAsync(string agentId, string agentType,
+        CancellationToken cancellationToken = default)
+    {
+        RequireText(agentId, nameof(agentId)); RequireText(agentType, nameof(agentType));
+        var now = Now(); await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO agents(agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json,project_id)
+            VALUES($id,$id,$type,NULL,$now,$now,NULL,NULL)
+            ON CONFLICT(agent_id) DO UPDATE SET agent_type=$type,last_seen_at=$now;
+            """;
+        Add(command, "$id", agentId); Add(command, "$type", agentType); Add(command, "$now", Format(now));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return new(agentId, agentId, agentType, null, now, now, null);
+    }
+
+    internal Task<Agent> RegisterAgentAsync(string agentId, string agentType) =>
+        RegisterLegacyAgentAsync(agentId, agentType);
 
     public async Task<IReadOnlyList<Agent>> ListAgentsAsync(CancellationToken cancellationToken = default)
     {
         var agents = new List<Agent>();
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json FROM agents ORDER BY agent_id";
+        command.CommandText = "SELECT agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json,project_id FROM agents ORDER BY agent_id";
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
             agents.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3), Parse(reader.GetString(4)),
-                Parse(reader.GetString(5)), reader.IsDBNull(6) ? null : reader.GetString(6)));
+                Parse(reader.GetString(5)), reader.IsDBNull(6) ? null : reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7)));
         return agents;
+    }
+
+    public async Task<Project> RegisterProjectInboxAsync(string projectId, string displayName,
+        CancellationToken cancellationToken = default)
+    {
+        projectId = NormalizeProjectId(projectId); RequireText(displayName, nameof(displayName));
+        var now = Format(Now());
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var conflict = connection.CreateCommand(); conflict.Transaction = transaction;
+        conflict.CommandText = "SELECT agent_type FROM agents WHERE agent_id=$id"; Add(conflict, "$id", projectId);
+        if (await conflict.ExecuteScalarAsync(cancellationToken) is string type && type != "project_inbox")
+            throw new ProjectOperationException(ProjectErrorCodes.AgentTypeConflict,
+                "The Project Inbox ID is already registered with a different agent type.", projectId);
+        await using var disabled = connection.CreateCommand(); disabled.Transaction = transaction;
+        disabled.CommandText = "SELECT enabled FROM projects WHERE project_id=$id COLLATE ITOGURUMA_NOCASE";
+        Add(disabled, "$id", projectId);
+        if (await disabled.ExecuteScalarAsync(cancellationToken) is long enabled && enabled == 0)
+            throw new ProjectOperationException(ProjectErrorCodes.DisabledProject,
+                "The project is disabled and cannot be registered or updated.", projectId);
+        await using var project = connection.CreateCommand(); project.Transaction = transaction;
+        project.CommandText = """
+            INSERT INTO projects(project_id,display_name,inbox_agent_id,enabled,created_at,updated_at)
+            VALUES($id,$name,$id,1,$now,$now)
+            ON CONFLICT(project_id) DO UPDATE SET display_name=$name,inbox_agent_id=$id,updated_at=$now;
+            """;
+        Add(project, "$id", projectId); Add(project, "$name", displayName); Add(project, "$now", now);
+        await project.ExecuteNonQueryAsync(cancellationToken);
+        await using var agent = connection.CreateCommand(); agent.Transaction = transaction;
+        agent.CommandText = """
+            INSERT INTO agents(agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json,project_id)
+            VALUES($id,$name,'project_inbox',NULL,$now,$now,NULL,$id)
+            ON CONFLICT(agent_id) DO UPDATE SET name=$name,last_seen_at=$now,project_id=$id;
+            """;
+        Add(agent, "$id", projectId); Add(agent, "$name", displayName); Add(agent, "$now", now);
+        await agent.ExecuteNonQueryAsync(cancellationToken);
+        await AuditAsync(connection, transaction, "project_inbox_registered", projectId, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return (await GetProjectAsync(projectId, cancellationToken))!;
+    }
+
+    private static async Task EnsureEnabledProjectAsync(SqliteConnection connection, SqliteTransaction transaction, string projectId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT enabled FROM projects WHERE project_id=$id COLLATE ITOGURUMA_NOCASE";
+        Add(command, "$id", projectId);
+        var enabled = await command.ExecuteScalarAsync(cancellationToken);
+        if (enabled is null) throw new ProjectOperationException(ProjectErrorCodes.UnknownProject, "Unknown parent project.", projectId);
+        if (Convert.ToInt32(enabled, System.Globalization.CultureInfo.InvariantCulture) == 0)
+            throw new ProjectOperationException(ProjectErrorCodes.DisabledProject, "Parent project is disabled.", projectId);
     }
 
     public async Task<bool> UnregisterAgentAsync(string agentId, CancellationToken cancellationToken = default)
@@ -655,10 +749,10 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     {
         await using var register = connection.CreateCommand(); register.Transaction = transaction;
         register.CommandText = """
-            INSERT OR IGNORE INTO agents(agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json)
-            VALUES($id,$id,'project_inbox',NULL,$now,$now,NULL);
+            INSERT OR IGNORE INTO agents(agent_id,name,agent_type,session_id,created_at,last_seen_at,metadata_json,project_id)
+            VALUES($id,$id,'project_inbox',NULL,$now,$now,NULL,$project);
             """;
-        Add(register, "$id", inbox); Add(register, "$now", Format(Now()));
+        Add(register, "$id", inbox); Add(register, "$project", projectId); Add(register, "$now", Format(Now()));
         if (await register.ExecuteNonQueryAsync(cancellationToken) == 1)
             await AuditAsync(connection, transaction, "project_inbox_registered", projectId, Format(Now()), cancellationToken);
         return inbox;

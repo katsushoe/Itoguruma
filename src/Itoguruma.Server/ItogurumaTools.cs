@@ -38,11 +38,31 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
     /// <summary>エージェントを登録または更新します。</summary>
     [McpServerTool(Name = "register_agent", UseStructuredContent = true)]
     [Description("Register or refresh an agent.")]
-    public async Task<ToolData<Agent>> RegisterAgent(string agent_id, string agent_type, string? name = null,
+    public async Task<CallToolResult> RegisterAgent(string agent_id, string agent_type, string project_id, string? name = null,
         string? session_id = null, string? metadata_json = null,
-        CancellationToken cancellationToken = default) =>
-        new(await service.RegisterAgentAsync(
-            agent_id, agent_type, name, session_id, metadata_json, cancellationToken));
+        CancellationToken cancellationToken = default)
+    {
+        try { return CreateResult(await service.RegisterAgentAsync(
+            agent_id, agent_type, project_id, name, session_id, metadata_json, cancellationToken)); }
+        catch (ProjectOperationException exception)
+        {
+            return CreateResult(new ToolError(exception.ErrorCode, "validation/agent_registration", exception.Message,
+                "Select an enabled parent with list_projects or resolve the conflicting agent registration.", false), isError: true);
+        }
+    }
+
+    [McpServerTool(Name = "register_project_inbox", Idempotent = true, UseStructuredContent = true)]
+    [Description("Atomically register or update a canonical Project and its Project Inbox agent.")]
+    public async Task<CallToolResult> RegisterProjectInbox(string project_id, string display_name,
+        CancellationToken cancellationToken = default)
+    {
+        try { return CreateResult(await service.RegisterProjectInboxAsync(project_id, display_name, cancellationToken)); }
+        catch (ProjectOperationException exception)
+        {
+            return CreateResult(new ToolError(exception.ErrorCode, "validation/project_registration", exception.Message,
+                "Correct the project ID or resolve the conflicting registration, then retry.", false), isError: true);
+        }
+    }
 
     /// <summary>登録済みエージェントを返します。</summary>
     [McpServerTool(Name = "list_agents", ReadOnly = true, UseStructuredContent = true)]

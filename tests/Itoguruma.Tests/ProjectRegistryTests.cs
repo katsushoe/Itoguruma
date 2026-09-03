@@ -8,6 +8,45 @@ public sealed class ProjectRegistryTests : IDisposable
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "itoguruma-project-tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task RegisterProjectInbox_IsIdempotentAndRepairsOrphanInbox()
+    {
+        var store = await CreateStoreAsync();
+        await store.RegisterLegacyAgentAsync("githubieselftest", "project_inbox");
+        await store.RegisterProjectInboxAsync("GithubieSelfTest", "Githubie Self Test");
+        await store.RegisterProjectInboxAsync("githubieselftest", "Githubie Self Test");
+        var project = Assert.Single(await store.ListProjectsAsync());
+        var agent = Assert.Single(await store.ListAgentsAsync());
+        Assert.Equal("githubieselftest", project.ProjectId);
+        Assert.Equal(project.ProjectId, agent.ProjectId);
+    }
+
+    [Fact]
+    public async Task RegisterAgent_RequiresEnabledExistingParent()
+    {
+        var store = await CreateStoreAsync();
+        var missing = await Assert.ThrowsAsync<ProjectOperationException>(() =>
+            store.RegisterAgentAsync("worker", "codex", "missing"));
+        Assert.Equal(ProjectErrorCodes.UnknownProject, missing.ErrorCode);
+        await store.RegisterProjectInboxAsync("moyai", "Moyai");
+        await store.SetProjectEnabledAsync("moyai", false);
+        var disabled = await Assert.ThrowsAsync<ProjectOperationException>(() =>
+            store.RegisterAgentAsync("worker", "codex", "moyai"));
+        Assert.Equal(ProjectErrorCodes.DisabledProject, disabled.ErrorCode);
+        Assert.DoesNotContain(await store.ListAgentsAsync(), agent => agent.AgentId == "worker");
+    }
+
+    [Fact]
+    public async Task RegisterProjectInbox_WhenAgentTypeConflicts_RollsBackProject()
+    {
+        var store = await CreateStoreAsync();
+        await store.RegisterLegacyAgentAsync("githubieselftest", "codex");
+        var error = await Assert.ThrowsAsync<ProjectOperationException>(() =>
+            store.RegisterProjectInboxAsync("githubieselftest", "Githubie Self Test"));
+        Assert.Equal(ProjectErrorCodes.AgentTypeConflict, error.ErrorCode);
+        Assert.Empty(await store.ListProjectsAsync());
+    }
+
+    [Fact]
     public async Task SendMessage_ToKnownProject_CreatesInboxAndDelivers()
     {
         var store = await CreateStoreAsync();
