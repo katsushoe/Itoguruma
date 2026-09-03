@@ -91,9 +91,25 @@ jobs:
             "release/$version/Itoguruma-$version-win-x64.msi"
             "release/$version/SHA256SUMS.txt"
           )
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes-$version.md"
+          $notes = gh api `
+            --method POST `
+            "repos/${{ github.repository }}/releases/generate-notes" `
+            -f "tag_name=$tag" `
+            -f "target_commitish=main" `
+            --jq .body
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub release note generation failed."
+          }
+          if ([string]::IsNullOrWhiteSpace($notes)) {
+            throw "Generated release notes are empty."
+          }
+          Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
+
           gh release view $tag 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag --title "Itoguruma $version" --notes-file $notesPath
             gh release upload $tag $assets --clobber
           } else {
-            gh release create $tag $assets --title "Itoguruma $version" --generate-notes
+            gh release create $tag $assets --title "Itoguruma $version" --notes-file $notesPath
           }
