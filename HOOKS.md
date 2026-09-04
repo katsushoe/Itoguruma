@@ -19,7 +19,7 @@ The installer writes `examples/codex-hooks.json` and `examples/claude-settings.j
 Hooks do not interrupt an idle client or start a new turn. Messages remain in SQLite while a client is stopped. After processing a message, acknowledge it with `ack_message` or:
 
 ```powershell
-itoguruma ack --agent <agentId> --message <messageId>
+itoguruma ack --agent <inboxAgentId> --consumer-agent <consumerAgentId> --message <messageId> --lease-id <leaseId>
 ```
 
 ## Verification

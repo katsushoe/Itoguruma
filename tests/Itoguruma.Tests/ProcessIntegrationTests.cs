@@ -36,7 +36,7 @@ public sealed class ProcessIntegrationTests : IDisposable
                 body = "integration message",
                 thread_id = "integration"
             }),
-            ToolRequest(6, "get_messages", new { agent_id = "recipient" })
+            ToolRequest(6, "get_messages", new { agent_id = "recipient", consumer_agent_id = "worker-a" })
         };
 
         var result = await RunMcpAsync(requests, databasePath);
@@ -51,11 +51,16 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal("integration message", message.GetProperty("body").GetString());
         Assert.Equal("codex", message.GetProperty("provider").GetString());
         var messageId = message.GetProperty("messageId").GetString();
+        var leaseId = message.GetProperty("leaseId").GetString();
 
         var acknowledgement = await RunMcpAsync(
         [
-            ToolRequest(6, "ack_message", new { agent_id = "recipient", message_id = messageId }),
-            ToolRequest(7, "get_messages", new { agent_id = "recipient" })
+            ToolRequest(6, "ack_message", new
+            {
+                agent_id = "recipient", consumer_agent_id = "worker-a",
+                message_id = messageId, lease_id = leaseId
+            }),
+            ToolRequest(7, "get_messages", new { agent_id = "recipient", consumer_agent_id = "worker-a" })
         ], databasePath);
 
         Assert.True(StructuredData(acknowledgement.Output[0]).GetProperty("acked").GetBoolean());
@@ -152,7 +157,8 @@ public sealed class ProcessIntegrationTests : IDisposable
                 thread_id = "integration",
                 idempotency_key = "integration-unknown-recipient"
             }),
-            ToolRequest(3, "get_messages", new { agent_id = "missingrecipient" })
+            ToolRequest(3, "get_messages", new
+                { agent_id = "missingrecipient", consumer_agent_id = "worker-a" })
         };
 
         var result = await RunMcpAsync(requests, databasePath);
@@ -429,14 +435,16 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.RegisterAgentAsync("recipient", "test");
         await service.SendMessageAsync(new("sender", ["recipient"], "prompt message", "hook", "codex"));
 
-        var prompt = await RunAsync("itoguruma", ["hook", "--agent", "recipient"], databasePath,
+        var prompt = await RunAsync("itoguruma",
+            ["hook", "--agent", "recipient", "--consumer-agent", "worker-a"], databasePath,
             "{\"hook_event_name\":\"UserPromptSubmit\"}");
 
         Assert.Equal(0, prompt.ExitCode);
         Assert.Contains("prompt message", prompt.StandardOutput, StringComparison.Ordinal);
         await service.SendMessageAsync(new("sender", ["recipient"], "stop message", "hook", "codex"));
 
-        var stop = await RunAsync("itoguruma", ["hook", "--agent", "recipient", "--lease-seconds", "-1"],
+        var stop = await RunAsync("itoguruma",
+            ["hook", "--agent", "recipient", "--consumer-agent", "worker-a", "--lease-seconds", "-1"],
             databasePath, "{\"hook_event_name\":\"Stop\"}");
 
         Assert.Equal(2, stop.ExitCode);

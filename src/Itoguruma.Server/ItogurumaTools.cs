@@ -202,12 +202,13 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
 
     /// <summary>対象エージェントの保留メッセージをリースします。</summary>
     [McpServerTool(Name = "get_messages", UseStructuredContent = true)]
-    [Description("Lease pending messages for an agent, optionally filtered by message_type.")]
-    public async Task<ToolData<IReadOnlyList<Message>>> GetMessages(string agent_id, int limit = 50,
+    [Description("Lease pending messages from an inbox for a consumer agent and return a lease_id for acknowledgement.")]
+    public async Task<ToolData<IReadOnlyList<Message>>> GetMessages(string agent_id, string consumer_agent_id, int limit = 50,
         int lease_seconds = 300, string? thread_id = null, string? message_type = null,
         CancellationToken cancellationToken = default) =>
         new(await service.GetMessagesAsync(
-            agent_id, limit, TimeSpan.FromSeconds(lease_seconds), thread_id, message_type, cancellationToken));
+            agent_id, limit, TimeSpan.FromSeconds(lease_seconds), thread_id, message_type,
+            consumer_agent_id, cancellationToken));
 
     /// <summary>CRファイルの現在状態と保存済みpayloadの整合性を検査します。</summary>
     [McpServerTool(Name = "inspect_change_request", ReadOnly = true, UseStructuredContent = true)]
@@ -241,10 +242,11 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
 
     /// <summary>リース済みメッセージを確認済みにします。</summary>
     [McpServerTool(Name = "ack_message", Idempotent = true, UseStructuredContent = true)]
-    [Description("Acknowledge a leased message.")]
-    public async Task<ToolData<AcknowledgementResult>> AckMessage(string agent_id, string message_id,
+    [Description("Acknowledge a message only when inbox, consumer agent, and lease_id match the active lease.")]
+    public async Task<ToolData<AcknowledgementResult>> AckMessage(string agent_id, string consumer_agent_id,
+        string message_id, string lease_id,
         CancellationToken cancellationToken = default) =>
-        new(new(await service.AckMessageAsync(agent_id, message_id, cancellationToken)));
+        new(new(await service.AckMessageAsync(agent_id, consumer_agent_id, message_id, lease_id, cancellationToken)));
 
     /// <summary>指定Threadの既読・過去分を含む履歴を時系列で返します。</summary>
     [McpServerTool(Name = "get_conversation_history", ReadOnly = true, UseStructuredContent = true)]
@@ -258,13 +260,13 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
     /// <summary>CLI hookと同じ形式の受信コンテキストを返します。</summary>
     [McpServerTool(Name = "get_hook_context", UseStructuredContent = true)]
     [Description("Lease messages and format the same context produced by the CLI hook command.")]
-    public async Task<ToolData<HookContextResult>> GetHookContext(string agent_id,
+    public async Task<ToolData<HookContextResult>> GetHookContext(string agent_id, string consumer_agent_id,
         string? hook_event_name = null, int limit = 50, int lease_seconds = 300,
         string? thread_id = null, string? message_type = null,
         CancellationToken cancellationToken = default)
     {
         var messages = await service.GetMessagesAsync(agent_id, limit, TimeSpan.FromSeconds(lease_seconds),
-            thread_id, message_type, cancellationToken);
+            thread_id, message_type, consumer_agent_id, cancellationToken);
         var context = messages.Count == 0 ? null :
             AppLocalization.Text("Itoguruma inbox messages:\n", "Itoguruma受信メッセージ:\n") +
             JsonSerializer.Serialize(messages, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });

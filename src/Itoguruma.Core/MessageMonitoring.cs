@@ -23,6 +23,8 @@ public sealed record MonitoredMessage(
     DateTimeOffset CreatedAt,
     string DeliveryStatus,
     DateTimeOffset? LeaseUntil,
+    string? LeaseOwnerAgentId,
+    int DeliveryAttemptCount,
     DateTimeOffset? DeliveredAt,
     DateTimeOffset? AcknowledgedAt);
 
@@ -86,7 +88,7 @@ public sealed class SqliteMessageMonitor(string databasePath, TimeProvider? time
                 SELECT m.message_id, m.thread_id, m.sender_agent_id, m.provider, d.recipient_agent_id,
                        m.message_type, m.body, m.payload_json, m.reply_to_message_id,
                        m.idempotency_key, m.created_at, d.status, d.lease_until,
-                       d.delivered_at, d.acked_at
+                       d.lease_owner_agent_id, d.delivery_attempt_count, d.delivered_at, d.acked_at
                 FROM messages m
                 JOIN message_deliveries d ON d.message_id = m.message_id
                 WHERE ($status IS NULL OR d.status = $status)
@@ -111,8 +113,8 @@ public sealed class SqliteMessageMonitor(string databasePath, TimeProvider? time
                     reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
                     reader.GetString(4), reader.GetString(5), reader.GetString(6), NullableString(reader, 7),
                     NullableString(reader, 8), NullableString(reader, 9), Parse(reader.GetString(10)),
-                    reader.GetString(11), NullableDate(reader, 12), NullableDate(reader, 13),
-                    NullableDate(reader, 14)));
+                    reader.GetString(11), NullableDate(reader, 12), NullableString(reader, 13),
+                    reader.GetInt32(14), NullableDate(reader, 15), NullableDate(reader, 16)));
             }
         }
 

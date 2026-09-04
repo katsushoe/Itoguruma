@@ -285,10 +285,10 @@ try {
     function New-HookSettings {
         param([string]$AgentId)
 
-        $hookCommand = '"' + $cliPath + '" hook --agent ' + $AgentId + ' --db "' + $databasePath + '"'
+        $hookCommand = '"' + $cliPath + '" hook --agent ' + $AgentId + ' --consumer-agent ' + $AgentId + ' --db "' + $databasePath + '"'
         $cliPowerShellPath = $cliPath.Replace("'", "''")
         $databasePowerShellPath = $databasePath.Replace("'", "''")
-        $hookCommandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ''' + $cliPowerShellPath + ''' hook --agent ' + $AgentId + ' --db ''' + $databasePowerShellPath + '''"'
+        $hookCommandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ''' + $cliPowerShellPath + ''' hook --agent ' + $AgentId + ' --consumer-agent ' + $AgentId + ' --db ''' + $databasePowerShellPath + '''"'
         $hookEntry = @{
             hooks = @(@{
                 type = "command"

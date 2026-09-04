@@ -128,6 +128,12 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             CREATE INDEX ix_agents_project_id ON agents(project_id);
             PRAGMA user_version=8;
             """, cancellationToken);
+            if (version < 9) await ApplyAsync(connection, (SqliteTransaction)transaction, """
+            ALTER TABLE message_deliveries ADD COLUMN lease_id TEXT NULL;
+            ALTER TABLE message_deliveries ADD COLUMN lease_owner_agent_id TEXT NULL;
+            ALTER TABLE message_deliveries ADD COLUMN delivery_attempt_count INTEGER NOT NULL DEFAULT 0;
+            PRAGMA user_version=9;
+            """, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
 
@@ -496,9 +502,12 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
 
     public async Task<IReadOnlyList<Message>> GetMessagesAsync(string agentId, int limit = 50,
         TimeSpan? leaseDuration = null, string? threadId = null, string? messageType = null,
+        string? consumerAgentId = null,
         CancellationToken cancellationToken = default)
     {
         RequireText(agentId, nameof(agentId));
+        var leaseOwnerAgentId = consumerAgentId ?? agentId;
+        RequireText(leaseOwnerAgentId, nameof(consumerAgentId));
         if (limit is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(limit));
         var now = Now(); var leaseUntil = now + (leaseDuration ?? TimeSpan.FromMinutes(5));
         var messages = new List<Message>();
@@ -507,7 +516,10 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         await using var command = connection.CreateCommand();
         command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = """
-            UPDATE message_deliveries SET status='leased', lease_until=$lease, delivered_at=COALESCE(delivered_at,$now)
+            UPDATE message_deliveries SET status='leased', lease_until=$lease,
+              lease_id=lower(hex(randomblob(16))),
+              lease_owner_agent_id=$lease_owner, delivery_attempt_count=delivery_attempt_count+1,
+              delivered_at=COALESCE(delivered_at,$now)
             WHERE rowid IN (SELECT d.rowid FROM message_deliveries d JOIN messages m ON m.message_id=d.message_id
               WHERE d.recipient_agent_id=$agent AND (d.status='pending' OR (d.status='leased' AND d.lease_until <= $now))
               AND ($thread IS NULL OR m.thread_id=$thread)
@@ -515,6 +527,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             RETURNING message_id;
             """;
         Add(command, "$lease", Format(leaseUntil)); Add(command, "$now", Format(now));
+        Add(command, "$lease_owner", leaseOwnerAgentId);
         Add(command, "$agent", agentId); Add(command, "$thread", threadId); Add(command, "$limit", limit);
         Add(command, "$type", messageType);
         var ids = new List<string>();
@@ -525,7 +538,8 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             await using var select = connection.CreateCommand(); select.Transaction = (SqliteTransaction)transaction;
             select.CommandText = """
                 SELECT m.message_id,m.thread_id,m.sender_agent_id,m.provider,m.reply_to_message_id,m.message_type,
-                  m.body,m.payload_json,m.created_at,d.status,d.lease_until FROM messages m
+                  m.body,m.payload_json,m.created_at,d.status,d.lease_until,d.lease_id,
+                  d.lease_owner_agent_id,d.delivery_attempt_count FROM messages m
                 JOIN message_deliveries d ON d.message_id=m.message_id
                 WHERE m.message_id=$id AND d.recipient_agent_id=$agent;
                 """;
@@ -535,8 +549,8 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         }
         await transaction.CommitAsync(cancellationToken);
         _logger.LogInformation(
-            "[Messaging][Lease] Agent {AgentId} leased {MessageCount} messages {MessageIds}; thread filter {ThreadId}; type filter {MessageType}; lease until {LeaseUntil}",
-            agentId, messages.Count, string.Join(',', messages.Select(message => message.MessageId)),
+            "[Messaging][Lease] Inbox {AgentId} leased {MessageCount} messages {MessageIds} to owner {LeaseOwnerAgentId}; thread filter {ThreadId}; type filter {MessageType}; lease until {LeaseUntil}",
+            agentId, messages.Count, string.Join(',', messages.Select(message => message.MessageId)), leaseOwnerAgentId,
             threadId, messageType, leaseUntil);
         return messages.OrderBy(x => x.CreatedAt).ToArray();
     }
@@ -576,20 +590,27 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         return history;
     }
 
-    public async Task<bool> AckMessageAsync(string agentId, string messageId, CancellationToken cancellationToken = default)
+    public async Task<bool> AckMessageAsync(string agentId, string consumerAgentId, string messageId, string leaseId,
+        CancellationToken cancellationToken = default)
     {
+        RequireText(agentId, nameof(agentId));
+        RequireText(consumerAgentId, nameof(consumerAgentId));
+        RequireText(messageId, nameof(messageId));
+        RequireText(leaseId, nameof(leaseId));
         var now = Format(Now());
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE message_deliveries SET status='acked',acked_at=$now,lease_until=NULL
-            WHERE message_id=$message AND recipient_agent_id=$agent AND status='leased';
+            WHERE message_id=$message AND recipient_agent_id=$agent AND status='leased'
+              AND lease_id=$lease_id AND lease_owner_agent_id=$lease_owner;
             """;
         Add(command, "$now", now); Add(command, "$message", messageId); Add(command, "$agent", agentId);
+        Add(command, "$lease_id", leaseId); Add(command, "$lease_owner", consumerAgentId);
         var acknowledged = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
         _logger.LogInformation(
-            "[Messaging][Ack] Agent {AgentId} acknowledgement for message {MessageId}: {Acknowledged}",
-            agentId, messageId, acknowledged);
+            "[Messaging][Ack] Inbox {AgentId} acknowledgement by owner {LeaseOwnerAgentId} for message {MessageId}: {Acknowledged}",
+            agentId, consumerAgentId, messageId, acknowledged);
         return acknowledged;
     }
 
@@ -825,7 +846,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
     private static Message ReadMessage(SqliteDataReader r) => new(r.GetString(0), r.GetString(1), r.GetString(2),
         r.GetString(3), r.IsDBNull(4) ? null : r.GetString(4), r.GetString(5), r.GetString(6),
         r.IsDBNull(7) ? null : r.GetString(7), Parse(r.GetString(8)), r.GetString(9),
-        r.IsDBNull(10) ? null : Parse(r.GetString(10)));
+        r.IsDBNull(10) ? null : Parse(r.GetString(10)), r.GetString(11), r.GetString(12), r.GetInt32(13));
 
     private static string NormalizeProvider(string provider) => NormalizeProviderOrNull(provider)
         ?? throw new ProviderValidationException(

@@ -5,7 +5,8 @@ public sealed record Agent(string AgentId, string Name, string AgentType, string
 
 public sealed record Message(string MessageId, string ThreadId, string SenderAgentId,
     string Provider, string? ReplyToMessageId, string MessageType, string Body, string? PayloadJson,
-    DateTimeOffset CreatedAt, string DeliveryStatus, DateTimeOffset? LeaseUntil);
+    DateTimeOffset CreatedAt, string DeliveryStatus, DateTimeOffset? LeaseUntil,
+    string LeaseId, string LeaseOwnerAgentId, int DeliveryAttemptCount);
 
 public sealed record SendMessageRequest(string SenderAgentId, IReadOnlyList<string> Recipients,
     string Body, string ThreadId, string Provider, string? ReplyToMessageId = null,

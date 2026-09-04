@@ -24,7 +24,7 @@ Merge `examples/claude-settings.json` into the target project's existing setting
 
 ## Connection check
 
-Register each client with `register_agent`, send a message, lease it with `get_messages`, and acknowledge it with `ack_message`. Use the same database, server URL, and token in every client.
+Register each client with `register_agent`, send a message, lease it with `get_messages` using the inbox and consumer Agent IDs, and acknowledge it with `ack_message` using the returned `lease_id`. Use the same database, server URL, and token in every client.
 
 ## Troubleshooting
 

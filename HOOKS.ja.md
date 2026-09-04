@@ -19,7 +19,7 @@ Itogurumaは、CodexとClaude Codeの`SessionStart`、`UserPromptSubmit`、`Stop
 Hookはidle中のクライアントへ割り込まず、新しいターンも開始しません。クライアント停止中のメッセージはSQLiteに残ります。処理後は`ack_message`または次のCLIでACKします。
 
 ```powershell
-itoguruma ack --agent <agentId> --message <messageId>
+itoguruma ack --agent <inboxAgentId> --consumer-agent <consumerAgentId> --message <messageId> --lease-id <leaseId>
 ```
 
 ## 確認

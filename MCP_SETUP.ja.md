@@ -24,7 +24,7 @@ claude mcp add --transport http --scope user --header 'Authorization: Bearer ${I
 
 ## 接続確認
 
-各クライアントを`register_agent`で登録し、メッセージを送信して`get_messages`でleaseし、`ack_message`でACKします。すべてのクライアントで同じDB、URL、トークンを使用してください。
+各クライアントを`register_agent`で登録し、Inboxと取得AgentのIDを指定して`get_messages`でleaseし、返された`lease_id`を指定して`ack_message`でACKします。すべてのクライアントで同じDB、URL、トークンを使用してください。
 
 ## トラブルシューティング
 

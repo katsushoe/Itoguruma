@@ -251,6 +251,8 @@ public sealed class MainForm : Form
             Status: {message.DeliveryStatus}
             Created: {Local(message.CreatedAt)}
             Lease until: {Local(message.LeaseUntil)}
+            Lease owner: {message.LeaseOwnerAgentId ?? string.Empty}
+            Delivery attempts: {message.DeliveryAttemptCount}
             Delivered: {Local(message.DeliveredAt)}
             Acknowledged: {Local(message.AcknowledgedAt)}
             Reply to: {message.ReplyToMessageId}

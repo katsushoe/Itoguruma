@@ -52,7 +52,7 @@ try
         changeRequestValidator);
     await service.InitializeAsync();
     if (arguments[0] == "project") return await RunProjectAsync(service);
-    if (arguments[0] == "hook") return await RunHookAsync(service, Required("--agent"));
+    if (arguments[0] == "hook") return await RunHookAsync(service, Required("--agent"), Required("--consumer-agent"));
     object result = arguments[0] switch
     {
         "register" => await service.RegisterAgentAsync(Required("--agent"), Required("--type"), Required("--project"), Option("--name"), Option("--session"), Option("--metadata")),
@@ -60,8 +60,8 @@ try
         "unregister" => new { unregistered = await service.UnregisterAgentAsync(Required("--agent")) },
         "delete-agent-history" => await RunDeleteAgentHistoryAsync(service),
         "send" => new { message_id = await service.SendMessageAsync(new(Required("--from"), RequiredMany("--to"), Required("--body"), Required("--thread"), Required("--provider"), Option("--reply-to"), Option("--message-type") ?? "message", Option("--payload-json"), Option("--idempotency-key"))) },
-        "inbox" => await service.GetMessagesAsync(Required("--agent"), Number("--limit",50), TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"), Option("--message-type")),
-        "ack" => new { acked = await service.AckMessageAsync(Required("--agent"), Required("--message")) },
+        "inbox" => await service.GetMessagesAsync(Required("--agent"), Number("--limit",50), TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"), Option("--message-type"), Required("--consumer-agent")),
+        "ack" => new { acked = await service.AckMessageAsync(Required("--agent"), Required("--consumer-agent"), Required("--message"), Required("--lease-id")) },
         "history" => await service.GetConversationHistoryAsync(Required("--thread"), Number("--limit", 100), Number("--offset", 0)),
         "inspect-change-request" => await service.InspectChangeRequestAsync(Required("--payload-json")),
         _ => throw new ArgumentException(AppLocalization.Text($"Unknown command: {arguments[0]}", $"不明なコマンドです: {arguments[0]}"))
@@ -138,12 +138,12 @@ async Task<int> RunProjectAsync(MessagingService messagingService)
     return 0;
 }
 
-async Task<int> RunHookAsync(MessagingService messagingService, string agentId)
+async Task<int> RunHookAsync(MessagingService messagingService, string agentId, string consumerAgentId)
 {
     var input = await Console.In.ReadToEndAsync();
     var eventName = ParseEventName(input);
     var messages = await messagingService.GetMessagesAsync(agentId, Number("--limit",50),
-        TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"), Option("--message-type"));
+        TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"), Option("--message-type"), consumerAgentId);
     if (messages.Count == 0) return 0;
     var context = AppLocalization.Text("Itoguruma inbox messages:\n", "Itoguruma受信メッセージ:\n") + JsonSerializer.Serialize(messages,
         new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
