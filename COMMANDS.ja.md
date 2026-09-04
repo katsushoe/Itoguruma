@@ -70,7 +70,7 @@ itoguruma auth rotate
 
 `provider`／`--provider`は送信ごとに必須で、`codex`、`claude-code`などの送信元実行環境を表します。小文字へ正規化され、ASCII英数字とハイフンだけを許可します。Itogurumaは指定値をメッセージへ保存し、Inbox、lease再配送、Hook、履歴、Viewerで同じ値を返します。認証済みクライアントが申告する配送メタデータであり、本人確認には使用しません。schema version 3以前から移行した既存メッセージは、過去値を推測せず`provider=unknown`として返します。
 
-`send_message`の宛先は、単一宛先なら`recipient`、複数宛先なら`recipients`を使います。`message_type`は`message`、`notification`、`system`、`change_request`のいずれかです。CRは通常メッセージへフォールバックせず、登録済み担当Agentを明示的な宛先に指定します。
+`send_message`の宛先は、単一宛先なら`recipient`、複数宛先なら`recipients`を使います。`message_type`は`message`、`notification`、`system`、`change_request`のいずれかです。CRは通常メッセージへフォールバックせず、登録済みProjectを明示的な宛先に指定します。メッセージはそのProjectに設定された単一のProject Inbox Agentへ配送されます。
 
 実行Agentの登録前に、初回は`register_project_inbox`、既存Projectでは`list_projects`を使用し、正規IDを`project_id`へ指定します。`metadata_json`内の`projectId`は参照整合性の根拠になりません。
 
