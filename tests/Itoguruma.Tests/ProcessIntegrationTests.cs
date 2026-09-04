@@ -630,6 +630,19 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Uninstaller_PreservesUserDataAndSkipsUpgradeRemoval()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var uninstaller = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Uninstall-Itoguruma.ps1"));
+        var package = File.ReadAllText(Path.Combine(repositoryRoot, "installer", "Package.wxs"));
+
+        Assert.Contains("$managedPaths", uninstaller, StringComparison.Ordinal);
+        Assert.Contains("User data is intentionally retained", uninstaller, StringComparison.Ordinal);
+        Assert.DoesNotContain("Remove-Item -LiteralPath $destinationRoot -Recurse", uninstaller, StringComparison.Ordinal);
+        Assert.Contains("NOT UPGRADINGPRODUCTCODE", package, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task McpServer_WhenDatabaseIsAlreadyInUse_SecondProcessExits()
     {
         var databasePath = Path.Combine(_directory, "single-instance.db");

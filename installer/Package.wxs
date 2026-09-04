@@ -40,7 +40,7 @@
 
     <InstallExecuteSequence>
       <Custom Action="InstallApplication" After="InstallFiles" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
-      <Custom Action="UninstallApplication" Before="RemoveFiles" Condition='REMOVE="ALL" AND NOT WIX_UPGRADE_DETECTED' />
+      <Custom Action="UninstallApplication" Before="RemoveFiles" Condition='REMOVE="ALL" AND NOT WIX_UPGRADE_DETECTED AND NOT UPGRADINGPRODUCTCODE' />
     </InstallExecuteSequence>
 
     <UI>
