@@ -49,7 +49,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 
 `provider`/`--provider` is required on every send and identifies the sender runtime, such as `codex` or `claude-code`. It is normalized to lowercase and must contain only ASCII letters, digits, and hyphens. Itoguruma stores the supplied value with the message and returns it through inbox leasing, redelivery, hooks, history, and Viewer. It is routing metadata supplied by an authenticated client, not proof of identity. Messages migrated from schema version 3 or earlier return `provider=unknown` without guessing a historical value.
 
-`message_type` accepts `message`, `notification`, `system`, or `change_request`. A change request requires a registered explicit recipient, a valid payload, and an existing Markdown file under `inbox/<target_project>/` in the configured CR root.
+`message_type` accepts `message`, `notification`, `system`, or `change_request`. A change request requires a registered Project as its explicit recipient, a valid payload, and an existing Markdown file under `inbox/<target_project>/` in the configured CR root. The message is delivered to the single Project Inbox Agent configured for that Project.
 
 Before runtime registration, use `register_project_inbox` for initial setup or `list_projects` for an existing parent, then pass the canonical ID as `project_id`. `metadata_json.projectId` is not an integrity source.
 
