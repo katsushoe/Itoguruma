@@ -19,8 +19,9 @@ public sealed class MessageMonitoringTests : IDisposable
         var leasedId = await store.SendMessageAsync(new("claude", ["codex"], "leased body", "leased-thread", "claude-code"));
         Assert.Contains(await store.GetMessagesAsync("codex", threadId: "leased-thread"), x => x.MessageId == leasedId);
         var acknowledgedId = await store.SendMessageAsync(new("claude", ["codex"], "acked body", "acked-thread", "claude-code"));
-        Assert.Contains(await store.GetMessagesAsync("codex", threadId: "acked-thread"), x => x.MessageId == acknowledgedId);
-        Assert.True(await store.AckMessageAsync("codex", acknowledgedId));
+        var acknowledged = Assert.Single(await store.GetMessagesAsync("codex", threadId: "acked-thread"));
+        Assert.Equal(acknowledgedId, acknowledged.MessageId);
+        Assert.True(await store.AckMessageAsync("codex", "codex", acknowledgedId, acknowledged.LeaseId));
 
         var monitor = new SqliteMessageMonitor(DatabasePath);
         var snapshot = await monitor.LoadAsync(new());

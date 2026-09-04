@@ -30,6 +30,8 @@ public sealed partial class MessageDetailsForm : Form
         AddRow("Status", message.DeliveryStatus);
         AddRow("Created", Local(message.CreatedAt));
         AddRow("Lease until", Local(message.LeaseUntil));
+        AddRow("Lease owner", message.LeaseOwnerAgentId ?? string.Empty);
+        AddRow("Delivery attempts", message.DeliveryAttemptCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
         AddRow("Delivered", Local(message.DeliveredAt));
         AddRow("Acknowledged", Local(message.AcknowledgedAt));
         AddRow("Reply to", message.ReplyToMessageId);

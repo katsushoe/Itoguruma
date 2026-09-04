@@ -13,7 +13,8 @@ public sealed class ItogurumaPrompts
         Use it for direct cross-project questions, notifications, progress checks, and formal change requests;
         it does not execute another agent's work or replace that project's task manager.
         Register each agent before messaging. Send with the actual execution provider and a stable thread_id,
-        lease incoming messages with get_messages, process them, then acknowledge each message with ack_message.
+        lease incoming messages with get_messages using the inbox and consumer Agent IDs, retain each lease_id,
+        process them, then acknowledge each message with ack_message using the same consumer Agent ID and lease_id.
         Reuse an idempotency_key when retrying the same logical send. For formal change requests, use a validated
         canonical CR file and a change_request message; never downgrade a failed change request to a normal message.
         Use get_conversation_history when prior acknowledged messages are needed. Do not acknowledge a message
@@ -34,8 +35,8 @@ public sealed class ItogurumaPrompts
         1. Call register_project_inbox for initial project setup, then call register_agent with its canonical project_id for runtime agents.
         2. Call list_projects and select the canonical destination Project ID using case-insensitive matching.
         3. Call send_message with sender_agent_id, the selected Project ID, the actual provider, body, and a stable thread_id.
-        4. The recipient calls get_messages with its inbox Agent ID to lease pending work.
-        5. Complete the request or send the required response before calling ack_message.
+        4. The recipient calls get_messages with its inbox Agent ID and consumer Agent ID to lease pending work.
+        5. Complete the request or send the required response before calling ack_message with the returned lease_id.
         6. Call get_conversation_history when the full thread, including acknowledged messages, is needed.
 
         Project IDs are repository names normalized with invariant lowercase and must match

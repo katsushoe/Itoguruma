@@ -25,7 +25,7 @@ public sealed class MessagingStoreTests : IDisposable
         var replayedMessageId = await store.SendMessageAsync(new(
             "sender", ["other"], "different secret", "audit-thread", "codex", IdempotencyKey: "audit-key"));
         var messages = await store.GetMessagesAsync("recipient");
-        var acknowledged = await store.AckMessageAsync("recipient", messageId);
+        var acknowledged = await store.AckMessageAsync("recipient", "recipient", messageId, messages[0].LeaseId);
 
         Assert.Equal(messageId, replayedMessageId);
         Assert.Single(messages);
@@ -51,8 +51,68 @@ public sealed class MessagingStoreTests : IDisposable
         await store.RegisterAgentAsync("sender","test"); await store.RegisterAgentAsync("recipient","test");
         var id=await store.SendMessageAsync(new("sender",["recipient"],"hello","thread-1","codex"));
         var first=await store.GetMessagesAsync("recipient");
-        Assert.Single(first); Assert.Equal(id,first[0].MessageId); Assert.True(await store.AckMessageAsync("recipient",id));
+        Assert.Single(first); Assert.Equal(id,first[0].MessageId);
+        Assert.True(await store.AckMessageAsync("recipient", "recipient", id, first[0].LeaseId));
         Assert.Empty(await store.GetMessagesAsync("recipient"));
+    }
+
+    [Fact]
+    public async Task AckMessage_WhenLeaseOwnerDoesNotMatch_DoesNotAcknowledge()
+    {
+        var store = CreateStore();
+        await store.InitializeAsync();
+        await store.RegisterAgentAsync("sender", "test");
+        await store.RegisterAgentAsync("recipient", "test");
+        var id = await store.SendMessageAsync(new("sender", ["recipient"], "hello", "thread-1", "codex"));
+        var message = Assert.Single(await store.GetMessagesAsync("recipient", consumerAgentId: "worker-a"));
+
+        var acknowledged = await store.AckMessageAsync("recipient", "worker-b", id, message.LeaseId);
+
+        Assert.False(acknowledged);
+    }
+
+    [Fact]
+    public async Task AckMessage_WhenLeaseIdDoesNotMatch_DoesNotAcknowledge()
+    {
+        var store = CreateStore();
+        await store.InitializeAsync();
+        await store.RegisterAgentAsync("sender", "test");
+        await store.RegisterAgentAsync("recipient", "test");
+        var id = await store.SendMessageAsync(new("sender", ["recipient"], "hello", "thread-1", "codex"));
+        var message = Assert.Single(await store.GetMessagesAsync("recipient", consumerAgentId: "worker-a"));
+
+        var acknowledged = await store.AckMessageAsync("recipient", "worker-a", id, Guid.NewGuid().ToString("N"));
+
+        Assert.False(acknowledged);
+        Assert.False(string.IsNullOrWhiteSpace(message.LeaseId));
+    }
+
+    [Fact]
+    public async Task Initialize_WhenCreatingDatabase_CreatesLeaseOwnershipSchemaVersionNine()
+    {
+        var store = CreateStore();
+        await store.InitializeAsync();
+        await using var connection = new SqliteConnection(
+            $"Data Source={Path.Combine(_directory, "messages.db")};Pooling=False");
+        await connection.OpenAsync();
+        await using var versionCommand = connection.CreateCommand();
+        versionCommand.CommandText = "PRAGMA user_version;";
+        var version = Convert.ToInt32(await versionCommand.ExecuteScalarAsync(),
+            System.Globalization.CultureInfo.InvariantCulture);
+        await using var columnsCommand = connection.CreateCommand();
+        columnsCommand.CommandText = "PRAGMA table_info(message_deliveries);";
+        var columns = new List<string>();
+        await using var reader = await columnsCommand.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
+
+        Assert.Equal(9, version);
+        Assert.Contains("lease_id", columns);
+        Assert.Contains("lease_owner_agent_id", columns);
+        Assert.Contains("delivery_attempt_count", columns);
+        await reader.DisposeAsync();
+        await columnsCommand.DisposeAsync();
+        await versionCommand.DisposeAsync();
+        await connection.CloseAsync();
     }
 
     [Fact]
@@ -71,6 +131,9 @@ public sealed class MessagingStoreTests : IDisposable
         Assert.Equal("codex", first.Provider);
         Assert.Equal(first.Provider, redelivery.Provider);
         Assert.Equal(first.Provider, history.Provider);
+        Assert.NotEqual(first.LeaseId, redelivery.LeaseId);
+        Assert.Equal(1, first.DeliveryAttemptCount);
+        Assert.Equal(2, redelivery.DeliveryAttemptCount);
     }
 
     [Fact]
@@ -138,11 +201,11 @@ public sealed class MessagingStoreTests : IDisposable
         await store.RegisterAgentAsync("claude","test"); await store.RegisterAgentAsync("codex","test");
         var outbound=await store.SendMessageAsync(new("claude",["codex"],"request","roundtrip","claude-code"));
         var atCodex=Assert.Single(await store.GetMessagesAsync("codex"));
-        Assert.True(await store.AckMessageAsync("codex",atCodex.MessageId));
+        Assert.True(await store.AckMessageAsync("codex", "codex", atCodex.MessageId, atCodex.LeaseId));
         var reply=await store.SendMessageAsync(new("codex",["claude"],"response","roundtrip","codex",outbound));
         var atClaude=Assert.Single(await store.GetMessagesAsync("claude"));
         Assert.Equal(reply,atClaude.MessageId); Assert.Equal(outbound,atClaude.ReplyToMessageId);
-        Assert.True(await store.AckMessageAsync("claude",atClaude.MessageId));
+        Assert.True(await store.AckMessageAsync("claude", "claude", atClaude.MessageId, atClaude.LeaseId));
     }
 
     [Fact]

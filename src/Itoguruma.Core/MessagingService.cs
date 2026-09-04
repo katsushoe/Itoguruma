@@ -52,8 +52,9 @@ public sealed class MessagingService(IMessageStore store, ChangeRequestValidator
 
     public Task<IReadOnlyList<Message>> GetMessagesAsync(string agentId, int limit = 50,
         TimeSpan? leaseDuration = null, string? threadId = null, string? messageType = null,
+        string? consumerAgentId = null,
         CancellationToken cancellationToken = default) =>
-        store.GetMessagesAsync(agentId, limit, leaseDuration, threadId, messageType, cancellationToken);
+        store.GetMessagesAsync(agentId, limit, leaseDuration, threadId, messageType, consumerAgentId, cancellationToken);
 
     /// <summary>保存済みpayloadとCRファイルの現在状態を再検証します。</summary>
     public Task<ChangeRequestInspection> InspectChangeRequestAsync(string? payloadJson,
@@ -61,8 +62,9 @@ public sealed class MessagingService(IMessageStore store, ChangeRequestValidator
         changeRequestValidator?.InspectAsync(payloadJson, requireStatusMatch: false, cancellationToken)
         ?? throw new InvalidOperationException("change_request delivery is not configured.");
 
-    public Task<bool> AckMessageAsync(string agentId, string messageId, CancellationToken cancellationToken = default) =>
-        store.AckMessageAsync(agentId, messageId, cancellationToken);
+    public Task<bool> AckMessageAsync(string agentId, string consumerAgentId, string messageId, string leaseId,
+        CancellationToken cancellationToken = default) =>
+        store.AckMessageAsync(agentId, consumerAgentId, messageId, leaseId, cancellationToken);
 
     public Task<IReadOnlyList<ConversationMessage>> GetConversationHistoryAsync(string threadId, int limit = 100,
         int offset = 0, CancellationToken cancellationToken = default) =>

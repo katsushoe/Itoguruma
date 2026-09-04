@@ -49,7 +49,8 @@ public sealed class MessagingStressTests : IDisposable
                 foreach (var message in messages)
                 {
                     deliveries.AddOrUpdate(message.MessageId, 1, (_, count) => count + 1);
-                    if (await store.AckMessageAsync("recipient", message.MessageId))
+                    if (await store.AckMessageAsync(
+                        "recipient", message.LeaseOwnerAgentId, message.MessageId, message.LeaseId))
                         Interlocked.Increment(ref acknowledged);
                 }
             }
@@ -80,7 +81,8 @@ public sealed class MessagingStressTests : IDisposable
         Assert.Equal(messageCount, redelivered.Select(message => message.MessageId)
             .Distinct(StringComparer.Ordinal).Count());
         await Task.WhenAll(redelivered.Select((message, index) =>
-            stores[index % stores.Count].AckMessageAsync("recipient", message.MessageId)));
+            stores[index % stores.Count].AckMessageAsync(
+                "recipient", message.LeaseOwnerAgentId, message.MessageId, message.LeaseId)));
         Assert.Empty(await stores[0].GetMessagesAsync("recipient", limit: 500));
     }
 

@@ -37,11 +37,11 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `unregister_agent` | `agent_id` | Fails while messages reference the agent. |
 | `delete_agent_history` | `agent_id`, `dry_run` | Previews or transactionally deletes associated messages and deliveries. |
 | `send_message` | sender, provider, body, thread, recipient(s) | Returns the persisted message ID; duplicate sender/idempotency-key pairs return the existing logical message. |
-| `get_messages` | `agent_id` | Leases matching pending or expired deliveries and returns none when no match exists. |
-| `ack_message` | `agent_id`, `message_id` | Acknowledges only the matching leased delivery. |
+| `get_messages` | `agent_id`, `consumer_agent_id` | Leases matching pending or expired deliveries, records the consumer, and returns a per-lease `lease_id`. |
+| `ack_message` | `agent_id`, `consumer_agent_id`, `message_id`, `lease_id` | Acknowledges only the delivery leased by the matching consumer and lease ID. |
 | `get_conversation_history` | `thread_id` | Returns the thread oldest first, including acknowledged messages; an unknown thread returns an empty array. |
 | `inspect_change_request` | `payload_json` | Revalidates the CR file and reports payload/file state differences. |
-| `get_hook_context` | `agent_id` | Leases messages and returns CLI-hook-compatible context and stop state. |
+| `get_hook_context` | `agent_id`, `consumer_agent_id` | Leases messages for the consumer and returns CLI-hook-compatible context and stop state. |
 | `get_auth_status` | None | Reports token presence without revealing it. |
 | `rotate_auth_token` | `confirmation=ROTATE` | Replaces the user token without returning its value; server and clients must be restarted. |
 
@@ -65,6 +65,6 @@ Before removing a referenced agent, call `delete_agent_history` with `dry_run=tr
 itoguruma register --agent codex-main --type codex --project itoguruma
 itoguruma project list
 itoguruma send --from codex-main --to moyai --provider codex --thread review --body "Review requested" --idempotency-key review-1
-itoguruma inbox --agent moyai --lease-seconds 300
-itoguruma ack --agent moyai --message <messageId>
+itoguruma inbox --agent moyai --consumer-agent moyai-codex-root --lease-seconds 300
+itoguruma ack --agent moyai --consumer-agent moyai-codex-root --message <messageId> --lease-id <leaseId>
 ```
