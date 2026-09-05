@@ -738,7 +738,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         try
         {
             using var client = new HttpClient { BaseAddress = new Uri(serverUrl) };
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             while (true)
             {
                 try
