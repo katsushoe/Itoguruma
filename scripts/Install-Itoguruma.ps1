@@ -242,6 +242,14 @@ try {
                 Copy-Item -LiteralPath $backupPath -Destination $destinationRoot -Recurse -Force
             }
         }
+        $authenticationTokenBackupPath = Join-Path $upgradeBackupRoot "auth"
+        if (Test-Path -LiteralPath $authenticationTokenBackupPath -PathType Leaf) {
+            $upgradeAuthenticationToken = [System.IO.File]::ReadAllText($authenticationTokenBackupPath)
+            if (![string]::IsNullOrWhiteSpace($upgradeAuthenticationToken)) {
+                [Environment]::SetEnvironmentVariable(
+                    "ITOGURUMA_AUTH_TOKEN", $upgradeAuthenticationToken, "User")
+            }
+        }
         Remove-Item -LiteralPath $upgradeBackupRoot -Recurse -Force
     }
 
