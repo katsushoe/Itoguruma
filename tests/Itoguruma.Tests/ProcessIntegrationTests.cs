@@ -356,7 +356,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("ack_message", instructions, StringComparison.Ordinal);
         Assert.Contains("change requests", instructions, StringComparison.Ordinal);
         Assert.Contains("list_projects", instructions, StringComparison.Ordinal);
-        Assert.Contains("^[a-z][a-z0-9]*$", instructions, StringComparison.Ordinal);
+        Assert.Contains("^[a-z][a-z0-9_]*$", instructions, StringComparison.Ordinal);
 
         var prompts = result.Output[1].RootElement.GetProperty("result").GetProperty("prompts");
         var guide = prompts.EnumerateArray().Single(prompt =>
@@ -370,7 +370,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("idempotency_key", text, StringComparison.Ordinal);
         Assert.Contains("message_type=change_request", text, StringComparison.Ordinal);
         Assert.Contains("list_projects", text, StringComparison.Ordinal);
-        Assert.Contains("^[a-z][a-z0-9]*$", text, StringComparison.Ordinal);
+        Assert.Contains("^[a-z][a-z0-9_]*$", text, StringComparison.Ordinal);
     }
 
     [Fact]
