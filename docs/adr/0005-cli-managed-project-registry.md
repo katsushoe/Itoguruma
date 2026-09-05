@@ -10,7 +10,7 @@ Message delivery previously required every recipient Agent or project to be regi
 
 ## Decision
 
-SQLite `projects` is the canonical project registry. Message recipients are Project IDs, not runtime Agent IDs. A recipient is normalized with invariant lowercase and must match `^[a-z][a-z0-9]*$`. If the normalized recipient is not registered, delivery transactionally creates an enabled project whose `project_id`, display name, and `inbox_agent_id` all equal the normalized recipient, creates its `project_inbox` Agent, and queues the delivery there. Malformed IDs and disabled projects are rejected.
+SQLite `projects` is the canonical project registry. Message recipients are Project IDs, not runtime Agent IDs. A recipient is normalized with invariant lowercase and must match `^[a-z][a-z0-9_]*$`. If the normalized recipient is not registered, delivery transactionally creates an enabled project whose `project_id`, display name, and `inbox_agent_id` all equal the normalized recipient, creates its `project_inbox` Agent, and queues the delivery there. Malformed IDs and disabled projects are rejected.
 
 Project IDs use ordinal case-insensitive matching across registration, lookup, mutation, deletion, and recipient resolution. The invariant-lowercase spelling is canonical, and a unique case-insensitive index prevents IDs that differ only by case. Agent IDs remain case-sensitive and may contain identifiers that Project IDs prohibit, but they are used only for sender identity and inbox leasing.
 

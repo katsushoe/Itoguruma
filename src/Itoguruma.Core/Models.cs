@@ -73,11 +73,11 @@ public static class ProjectIdPolicy
         return projectId.Trim().ToLowerInvariant();
     }
 
-    /// <summary>正規化済みProject IDがASCII英小文字と数字だけで構成されるかを返します。</summary>
+    /// <summary>正規化済みProject IDがASCII英小文字で始まり、英小文字、数字、アンダースコアで構成されるかを返します。</summary>
     public static bool IsValid(string projectId)
     {
         if (projectId.Length == 0 || projectId[0] is < 'a' or > 'z') return false;
-        return projectId.All(character => character is >= 'a' and <= 'z' or >= '0' and <= '9');
+        return projectId.All(character => character is >= 'a' and <= 'z' or >= '0' and <= '9' or '_');
     }
 
     /// <summary>登録済みプロジェクトから入力に近い候補を最大5件返します。</summary>

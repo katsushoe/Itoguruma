@@ -120,6 +120,19 @@ public sealed class ProjectRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task SendMessage_ToProjectWithUnderscore_AutoRegistersProjectAndInbox()
+    {
+        var store = await CreateStoreAsync();
+        await store.RegisterAgentAsync("sender", "test");
+
+        await store.SendMessageAsync(new("sender", ["AI_prompt"], "body", "thread", "codex"));
+
+        var project = Assert.Single(await store.ListProjectsAsync());
+        Assert.Equal("ai_prompt", project.ProjectId);
+        Assert.Equal("body", Assert.Single(await store.GetMessagesAsync("ai_prompt")).Body);
+    }
+
+    [Fact]
     public async Task SendMessage_ToDisabledProject_ReturnsFixedErrorCode()
     {
         var store = await CreateStoreAsync();
@@ -169,6 +182,7 @@ public sealed class ProjectRegistryTests : IDisposable
     [Theory]
     [InlineData("Itoguruma", "itoguruma")]
     [InlineData("moyai2", "moyai2")]
+    [InlineData("AI_prompt", "ai_prompt")]
     public void ProjectIdPolicy_WhenInputUsesSupportedCharacters_NormalizesAndValidates(
         string input,
         string expected)
@@ -179,7 +193,7 @@ public sealed class ProjectRegistryTests : IDisposable
 
     [Theory]
     [InlineData("moyai-codex-root")]
-    [InlineData("moyai_root")]
+    [InlineData("_moyai")]
     [InlineData("2moyai")]
     [InlineData("もやい")]
     public void ProjectIdPolicy_WhenInputViolatesContract_ReturnsInvalid(string input)

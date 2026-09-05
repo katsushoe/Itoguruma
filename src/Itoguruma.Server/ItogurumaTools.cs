@@ -17,7 +17,7 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         Persist and enqueue a message idempotently.
         Before sending, call list_projects and select the canonical destination Project ID using ordinal
         case-insensitive matching. Project IDs are normalized with invariant lowercase and must match
-        ^[a-z][a-z0-9]*$. Valid unknown Project IDs are automatically registered.
+        ^[a-z][a-z0-9_]*$. Valid unknown Project IDs are automatically registered.
 
         Error category catalog:
         | Category | Meaning | Recommended response |

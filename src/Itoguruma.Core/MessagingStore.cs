@@ -725,7 +725,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
             var projects = await ListProjectsAsync(connection, transaction, cancellationToken);
             throw new ProjectOperationException(
                 ProjectErrorCodes.InvalidProjectId,
-                "Project ID must match ^[a-z][a-z0-9]*$ after invariant lowercase normalization.",
+                "Project ID must match ^[a-z][a-z0-9_]*$ after invariant lowercase normalization.",
                 recipient,
                 ProjectIdPolicy.FindCandidates(recipient, projects));
         }
@@ -794,7 +794,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         var normalizedProjectId = ProjectIdPolicy.Normalize(mutation.ProjectId);
         if (!ProjectIdPolicy.IsValid(normalizedProjectId))
             throw new ProjectOperationException(ProjectErrorCodes.InvalidProjectId,
-                "Project ID must match ^[a-z][a-z0-9]*$ after invariant lowercase normalization.",
+                "Project ID must match ^[a-z][a-z0-9_]*$ after invariant lowercase normalization.",
                 mutation.ProjectId);
         if (requireInbox) RequireText(mutation.InboxAgentId ?? string.Empty, nameof(mutation.InboxAgentId));
         if (mutation.DisplayName is not null) RequireText(mutation.DisplayName, nameof(mutation.DisplayName));
@@ -823,7 +823,7 @@ public sealed class SqliteMessageStore(string databasePath, TimeProvider? timePr
         var normalized = ProjectIdPolicy.Normalize(projectId);
         if (!ProjectIdPolicy.IsValid(normalized))
             throw new ProjectOperationException(ProjectErrorCodes.InvalidProjectId,
-                "Project ID must match ^[a-z][a-z0-9]*$ after invariant lowercase normalization.",
+                "Project ID must match ^[a-z][a-z0-9_]*$ after invariant lowercase normalization.",
                 projectId);
         return normalized;
     }

@@ -74,7 +74,7 @@ itoguruma auth rotate
 
 実行Agentの登録前に、初回は`register_project_inbox`、既存Projectでは`list_projects`を使用し、正規IDを`project_id`へ指定します。`metadata_json`内の`projectId`は参照整合性の根拠になりません。
 
-`send`／`send_message`の前に`list_projects`を呼び、大文字小文字非依存で照合した正規Project IDを選択します。宛先はProject IDであり、実行中Agent IDではありません。入力はInvariant lowercaseへ正規化し、`^[a-z][a-z0-9]*$`に一致する必要があります。正しい形式で未登録なら、送信トランザクション内で正規IDをProject ID兼Inbox Agent IDとして有効なプロジェクトと`project_inbox` Agentを自動登録し、そのまま配送します。不正IDは`ITG_PROJECT_ID_INVALID`として、入力値と類似する登録済み候補を最大5件返します。無効プロジェクトは`ITG_PROJECT_DISABLED`を返します。明示的なプロジェクト変更はMCPから実行できず、実コンソールで5桁コードを60秒以内、最大3回で再入力する必要があります。入出力リダイレクトや回避オプションは認めません。参照済みプロジェクトの削除は`ITG_PROJECT_REFERENCED`となるため、`disable`を使用します。
+`send`／`send_message`の前に`list_projects`を呼び、大文字小文字非依存で照合した正規Project IDを選択します。宛先はProject IDであり、実行中Agent IDではありません。入力はInvariant lowercaseへ正規化し、`^[a-z][a-z0-9_]*$`に一致する必要があります。正しい形式で未登録なら、送信トランザクション内で正規IDをProject ID兼Inbox Agent IDとして有効なプロジェクトと`project_inbox` Agentを自動登録し、そのまま配送します。不正IDは`ITG_PROJECT_ID_INVALID`として、入力値と類似する登録済み候補を最大5件返します。無効プロジェクトは`ITG_PROJECT_DISABLED`を返します。明示的なプロジェクト変更はMCPから実行できず、実コンソールで5桁コードを60秒以内、最大3回で再入力する必要があります。入出力リダイレクトや回避オプションは認めません。参照済みプロジェクトの削除は`ITG_PROJECT_REFERENCED`となるため、`disable`を使用します。
 
 Project IDはInvariant lowercaseで保存・返却し、大文字小文字を区別せず照合します。Agent IDは大文字小文字を区別し、送信元識別とInbox leaseに使用します。既存IDと大文字小文字だけが異なるプロジェクトは別登録できません。
 

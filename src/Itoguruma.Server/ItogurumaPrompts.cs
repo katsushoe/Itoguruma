@@ -21,7 +21,7 @@ public sealed class ItogurumaPrompts
         before its requested work or response has been handled.
         Before send_message, call list_projects and select the canonical destination Project ID using
         ordinal case-insensitive matching. Project IDs are repository names normalized with invariant lowercase
-        and must match ^[a-z][a-z0-9]*$. Never infer a destination from a display name, runtime Agent ID,
+        and must match ^[a-z][a-z0-9_]*$. Never infer a destination from a display name, runtime Agent ID,
         client, session, or sender_agent_id. A valid unknown Project ID is automatically registered.
         """;
 
@@ -40,7 +40,7 @@ public sealed class ItogurumaPrompts
         6. Call get_conversation_history when the full thread, including acknowledged messages, is needed.
 
         Project IDs are repository names normalized with invariant lowercase and must match
-        ^[a-z][a-z0-9]*$. Do not use a display name, runtime Agent ID, client, session, or sender_agent_id as
+        ^[a-z][a-z0-9_]*$. Do not use a display name, runtime Agent ID, client, session, or sender_agent_id as
         a destination. A valid unknown Project ID is automatically registered. If send_message returns
         candidates, choose only when the intended project is unambiguous; otherwise ask the user.
 
