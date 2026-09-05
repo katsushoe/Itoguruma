@@ -33,7 +33,7 @@
     <CustomAction Id="InstallApplication" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
                   Execute="deferred" Return="check" Impersonate="yes" />
     <SetProperty Id="WixQuietExecCmdLine"
-                 Value='&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -Command &quot;rm &apos;[LocalAppDataFolder]Itoguruma Upgrade Backup&apos; -r -fo -ea Ignore; cp &apos;C:\Itoguruma&apos; &apos;[LocalAppDataFolder]Itoguruma Upgrade Backup&apos; -r -fo&quot;'
+                 Value='&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -c &quot;$b=&apos;[LocalAppDataFolder]Itoguruma Upgrade Backup&apos;;rm $b -r -fo -ea 0;cp C:\Itoguruma $b -r -fo;$v=(gp HKCU:\Environment).ITOGURUMA_AUTH_TOKEN;if($v){sc $b\auth $v -N}&quot;'
                  Before="BackupUserData" Sequence="execute" />
     <CustomAction Id="BackupUserData" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
                   Execute="immediate" Return="check" Impersonate="yes" />

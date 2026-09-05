@@ -646,6 +646,9 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("Before=\"RemoveExistingProducts\"", package, StringComparison.Ordinal);
         Assert.Contains("Itoguruma Upgrade Backup", installer, StringComparison.Ordinal);
         Assert.Contains("foreach ($name in @(\"data\", \"config\", \"logs\"))", installer, StringComparison.Ordinal);
+        Assert.Contains("ITOGURUMA_AUTH_TOKEN", installer, StringComparison.Ordinal);
+        Assert.Contains("$b\\auth", package, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetEnvironmentVariable($name, $null", uninstaller, StringComparison.Ordinal);
     }
 
     [Fact]

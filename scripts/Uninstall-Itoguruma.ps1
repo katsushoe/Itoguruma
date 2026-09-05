@@ -17,10 +17,6 @@ Get-Process -Name "Itoguruma.Server" -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -eq $serverPath } |
     Stop-Process -Force
 
-foreach ($name in @("ITOGURUMA_AUTH_TOKEN", "ITOGURUMA_DB", "ITOGURUMA_URL", "ITOGURUMA_CONFIG_DIR", "ITOGURUMA_LOG_DIR")) {
-    [Environment]::SetEnvironmentVariable($name, $null, "User")
-}
-
 $removedPaths = @(
     (Join-Path $destinationRoot "bin\itoguruma"),
     (Join-Path $destinationRoot "bin\stop-codex"),
