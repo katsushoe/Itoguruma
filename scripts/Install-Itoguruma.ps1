@@ -234,6 +234,17 @@ try {
         }
     }
 
+    $upgradeBackupRoot = Join-Path $env:LOCALAPPDATA "Itoguruma Upgrade Backup"
+    if (Test-Path -LiteralPath $upgradeBackupRoot -PathType Container) {
+        foreach ($name in @("data", "config", "logs")) {
+            $backupPath = Join-Path $upgradeBackupRoot $name
+            if (Test-Path -LiteralPath $backupPath) {
+                Copy-Item -LiteralPath $backupPath -Destination $destinationRoot -Recurse -Force
+            }
+        }
+        Remove-Item -LiteralPath $upgradeBackupRoot -Recurse -Force
+    }
+
     $cliDirectory = Join-Path $destinationRoot "bin\itoguruma"
     $stopCodexDirectory = Join-Path $destinationRoot "bin\stop-codex"
     $stopClaudeDirectory = Join-Path $destinationRoot "bin\stop-claude"

@@ -32,6 +32,11 @@
                  Before="InstallApplication" Sequence="execute" />
     <CustomAction Id="InstallApplication" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
                   Execute="deferred" Return="check" Impersonate="yes" />
+    <SetProperty Id="WixQuietExecCmdLine"
+                 Value='&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -Command &quot;rm &apos;[LocalAppDataFolder]Itoguruma Upgrade Backup&apos; -r -fo -ea Ignore; cp &apos;C:\Itoguruma&apos; &apos;[LocalAppDataFolder]Itoguruma Upgrade Backup&apos; -r -fo&quot;'
+                 Before="BackupUserData" Sequence="execute" />
+    <CustomAction Id="BackupUserData" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+                  Execute="immediate" Return="check" Impersonate="yes" />
     <SetProperty Id="UninstallApplication"
                  Value='&quot;[System64Folder]cmd.exe&quot; /d /c call &quot;[INSTALLFOLDER]Uninstall-Itoguruma-Msi.cmd&quot; &quot;[INSTALLFOLDER]Uninstall-Itoguruma.ps1&quot;'
                  Before="UninstallApplication" Sequence="execute" />
@@ -39,8 +44,9 @@
                   Execute="deferred" Return="check" Impersonate="yes" />
 
     <InstallExecuteSequence>
+      <Custom Action="BackupUserData" Before="RemoveExistingProducts" Condition="WIX_UPGRADE_DETECTED" />
       <Custom Action="InstallApplication" After="InstallFiles" Condition="NOT Installed OR WIX_UPGRADE_DETECTED" />
-      <Custom Action="UninstallApplication" Before="RemoveFiles" Condition='REMOVE="ALL" AND NOT WIX_UPGRADE_DETECTED' />
+      <Custom Action="UninstallApplication" Before="RemoveFiles" Condition='REMOVE="ALL" AND NOT WIX_UPGRADE_DETECTED AND NOT UPGRADINGPRODUCTCODE' />
     </InstallExecuteSequence>
 
     <UI>

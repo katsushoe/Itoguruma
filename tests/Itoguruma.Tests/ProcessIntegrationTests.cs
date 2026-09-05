@@ -630,6 +630,25 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Uninstaller_PreservesUserDataAndSkipsUpgradeRemoval()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var uninstaller = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Uninstall-Itoguruma.ps1"));
+        var package = File.ReadAllText(Path.Combine(repositoryRoot, "installer", "Package.wxs"));
+        var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
+
+        Assert.Contains("$managedPaths", uninstaller, StringComparison.Ordinal);
+        Assert.Contains("User data is intentionally retained", uninstaller, StringComparison.Ordinal);
+        Assert.DoesNotContain("Remove-Item -LiteralPath $destinationRoot -Recurse", uninstaller, StringComparison.Ordinal);
+        Assert.Contains("NOT UPGRADINGPRODUCTCODE", package, StringComparison.Ordinal);
+        Assert.Contains("BackupUserData", package, StringComparison.Ordinal);
+        Assert.Contains("Id=\"WixQuietExecCmdLine\"", package, StringComparison.Ordinal);
+        Assert.Contains("Before=\"RemoveExistingProducts\"", package, StringComparison.Ordinal);
+        Assert.Contains("Itoguruma Upgrade Backup", installer, StringComparison.Ordinal);
+        Assert.Contains("foreach ($name in @(\"data\", \"config\", \"logs\"))", installer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task McpServer_WhenDatabaseIsAlreadyInUse_SecondProcessExits()
     {
         var databasePath = Path.Combine(_directory, "single-instance.db");

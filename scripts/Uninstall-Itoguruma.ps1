@@ -33,8 +33,34 @@ $pathEntries = @($userPath -split ";" | Where-Object {
 })
 [Environment]::SetEnvironmentVariable("Path", ($pathEntries -join ";"), "User")
 
-if (Test-Path -LiteralPath $destinationRoot) {
-    Remove-Item -LiteralPath $destinationRoot -Recurse -Force
+$managedPaths = @(
+    "bin",
+    "examples",
+    "README.md",
+    "README.ja.md",
+    "COMMANDS.md",
+    "COMMANDS.ja.md",
+    "CONFIG.md",
+    "CONFIG.ja.md",
+    "MCP_SETUP.md",
+    "MCP_SETUP.ja.md",
+    "PACKAGES.md",
+    "PACKAGES.ja.md",
+    "SECURITY.md",
+    "SECURITY.ja.md"
+)
+foreach ($relativePath in $managedPaths) {
+    $managedPath = Join-Path $destinationRoot $relativePath
+    if (Test-Path -LiteralPath $managedPath) {
+        Remove-Item -LiteralPath $managedPath -Recurse -Force
+    }
 }
 
-Write-Host "Itoguruma was uninstalled. / Itogurumaをアンインストールしました。"
+# User data is intentionally retained across uninstall and MSI upgrades.
+# In particular, never remove data, config, or logs from the installation root.
+if ((Test-Path -LiteralPath $destinationRoot) -and
+    @(Get-ChildItem -LiteralPath $destinationRoot -Force).Count -eq 0) {
+    Remove-Item -LiteralPath $destinationRoot -Force
+}
+
+Write-Host "Itoguruma was uninstalled. User data was retained. / Itogurumaをアンインストールしました。ユーザーデータは保持されています。"
