@@ -28,7 +28,7 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 
 ## Configuration
 
-The server requires `ITOGURUMA_AUTH_TOKEN`; it also supports `ITOGURUMA_URL`, `ITOGURUMA_DB`, `ITOGURUMA_CONFIG_DIR`, `ITOGURUMA_LOG_DIR`, and `ITOGURUMA_CR_ROOT`. See [CONFIG.md](CONFIG.md).
+The server reads runtime settings from `config/appsettings.json` and its bearer token from Windows Credential Manager. Codex and Claude connect through the packaged local stdio proxy. See [CONFIG.md](CONFIG.md).
 
 ## Usage
 

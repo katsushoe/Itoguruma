@@ -8,7 +8,7 @@ Itogurumaは、単一Windowsユーザーとloopback限定HTTP endpointでの利�
 
 ## 秘密情報と認証
 
-すべてのMCPリクエストには`ITOGURUMA_AUTH_TOKEN`のBearerトークンが必要です。トークンを表示、コミット、ログ記録、共有文書への記載の対象にしないでください。設定の有無は`itoguruma auth status`で確認し、漏えいが疑われる場合は`itoguruma auth rotate`を実行します。旧トークンは直ちに無効になるため、すべてのクライアントを再起動または再設定してください。
+すべてのStreamable HTTP MCPリクエストには、ユーザー単位のWindows資格情報`Itoguruma/McpBearerToken`に保存されたBearerトークンが必要です。ローカルstdioプロキシがこれを読み取り、ヘッダーを付加します。トークンを表示、コミット、ログ記録、設定ファイルや共有文書への記載の対象にしないでください。設定の有無は`itoguruma auth status`で確認し、漏えいが疑われる場合は`itoguruma auth rotate`を実行します。旧トークンは直ちに無効になるため、サーバーとクライアントを再起動してください。
 
 ## データと変更依頼
 

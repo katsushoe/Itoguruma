@@ -27,6 +27,8 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         | `validation/provider` | The required provider is missing or invalid. | Supply the sender provider using lowercase ASCII letters, digits, or hyphens, then retry with the same `idempotency_key`. |
         | `validation/change_request` | A CR path, payload field, canonical file field, or status is invalid or inconsistent. | Correct the CR payload or canonical file; do not fall back to a normal message. |
         | `validation/project_recipient` | The recipient Project ID is malformed or the project is disabled. | Use list_projects, select the canonical Project ID, and retry with the same `idempotency_key`. |
+        | `sqlite/transaction/conflict` | The message database is temporarily busy or locked. | Retry with the same `idempotency_key`. |
+        | `sqlite/transaction/failure` | The message database operation failed. | Inspect the server log before retrying. |
         | `internal` | The operation failed for an unclassified internal reason. | Inspect the error content before retrying. |
         """;
 
@@ -164,6 +166,24 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
                 "sqlite/table/write/reference_key",
                 "Itoguruma rejected the message because a referenced sender, recipient, or reply target does not exist.",
                 "Register the sender agent, verify reply_to_message_id when supplied, then retry with the same idempotency_key.",
+                true), isError: true);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
+        {
+            return CreateResult(new ToolError(
+                "message_database_conflict",
+                "sqlite/transaction/conflict",
+                "The message transaction conflicted with another database operation.",
+                "Wait briefly, then retry with the same idempotency_key.",
+                true), isError: true);
+        }
+        catch (SqliteException)
+        {
+            return CreateResult(new ToolError(
+                "message_database_failure",
+                "sqlite/transaction/failure",
+                "The message database operation failed and the transaction was rolled back.",
+                "Inspect the server log, correct the database problem, then retry with the same idempotency_key.",
                 true), isError: true);
         }
         catch (ProviderValidationException exception)

@@ -40,12 +40,12 @@ try
     }
     if (arguments[0] == "auth")
     {
-        return new AuthCommand(new UserEnvironmentTokenStore(), Console.In, Console.Out, Console.Error)
+        return new AuthCommand(new WindowsCredentialTokenStore(), Console.In, Console.Out, Console.Error)
             .Run(arguments.Skip(1).ToList());
     }
-    var db = Option("--db") ?? Environment.GetEnvironmentVariable("ITOGURUMA_DB")
+    var db = Option("--db")
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
-    var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT");
+    var crRoot = Option("--cr-root");
     var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
     var service = new MessagingService(
         new SqliteMessageStore(db, logger: loggerFactory.CreateLogger<SqliteMessageStore>()),
@@ -102,7 +102,7 @@ IReadOnlyList<string> RequiredMany(string name)
         : throw new ArgumentException(AppLocalization.Text($"Missing option: {name}", $"必須オプションがありません: {name}"));
 }
 int Number(string name,int fallback) => int.TryParse(Option(name),out var value) ? value : fallback;
-static int Usage() { Console.WriteLine(AppLocalization.Text("itoguruma register|agents|unregister|delete-agent-history|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\nSet ITOGURUMA_DB or pass --db <path>.", "itoguruma register|agents|unregister|delete-agent-history|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\nITOGURUMA_DBを設定するか、--db <path>を指定してください。")); return 0; }
+static int Usage() { Console.WriteLine(AppLocalization.Text("itoguruma register|agents|unregister|delete-agent-history|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\nPass --db <path> and optionally --cr-root <path>.", "itoguruma register|agents|unregister|delete-agent-history|send|inbox|ack|history|inspect-change-request|hook|auth|project|version [options]\n--db <path>と必要に応じて--cr-root <path>を指定してください。")); return 0; }
 
 async Task<AgentHistoryDeleteResult> RunDeleteAgentHistoryAsync(MessagingService messagingService)
 {

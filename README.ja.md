@@ -28,7 +28,7 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 
 ## 設定
 
-サーバーには`ITOGURUMA_AUTH_TOKEN`が必須です。`ITOGURUMA_URL`、`ITOGURUMA_DB`、`ITOGURUMA_CONFIG_DIR`、`ITOGURUMA_LOG_DIR`、`ITOGURUMA_CR_ROOT`も使用できます。詳細は[CONFIG.ja.md](CONFIG.ja.md)を参照してください。
+サーバーは実行時設定を`config/appsettings.json`から、BearerトークンをWindows資格情報マネージャーから読み取ります。CodexとClaudeは同梱のローカルstdioプロキシを経由して接続します。詳細は[CONFIG.ja.md](CONFIG.ja.md)を参照してください。
 
 ## 使用方法
 
