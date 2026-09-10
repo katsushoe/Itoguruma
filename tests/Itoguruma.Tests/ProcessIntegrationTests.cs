@@ -588,20 +588,103 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void Installer_WhenConfiguringClaude_UsesEnvironmentTokenAndFallbackPaths()
+    public async Task McpProxy_WhenStdioRequestIsReceived_ForwardsAuthenticatedStreamableHttpResponse()
+    {
+        var port = GetAvailablePort();
+        var endpoint = $"http://127.0.0.1:{port}/mcp/";
+        var token = Guid.NewGuid().ToString("N");
+        var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
+        var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
+        credentialStore.Save(token);
+        using var listener = new HttpListener();
+        listener.Prefixes.Add(endpoint);
+        listener.Start();
+        var responseTask = Task.Run(async () =>
+        {
+            var context = await listener.GetContextAsync();
+            Assert.Equal($"Bearer {token}", context.Request.Headers["Authorization"]);
+            context.Response.ContentType = "text/event-stream";
+            await using var writer = new StreamWriter(context.Response.OutputStream);
+            await writer.WriteAsync("data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n");
+            await writer.FlushAsync();
+            context.Response.Close();
+        });
+        try
+        {
+            var result = await RunAsync("Itoguruma.McpProxy",
+                ["--url", endpoint, "--credential-target", credentialTarget],
+                Path.Combine(_directory, "unused.db"), "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n");
+            await responseTask;
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("\"result\":{}", result.StandardOutput, StringComparison.Ordinal);
+        }
+        finally
+        {
+            credentialStore.Delete();
+        }
+    }
+
+    [Fact]
+    public async Task McpProxy_WhenServerReturnsError_ReportsErrorAndContinuesProcessing()
+    {
+        var port = GetAvailablePort();
+        var endpoint = $"http://127.0.0.1:{port}/mcp/";
+        var token = Guid.NewGuid().ToString("N");
+        var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
+        var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
+        credentialStore.Save(token);
+        using var listener = new HttpListener();
+        listener.Prefixes.Add(endpoint);
+        listener.Start();
+        var responseTask = Task.Run(async () =>
+        {
+            var failed = await listener.GetContextAsync();
+            failed.Response.StatusCode = 500;
+            failed.Response.Close();
+            var succeeded = await listener.GetContextAsync();
+            succeeded.Response.ContentType = "application/json";
+            await using var writer = new StreamWriter(succeeded.Response.OutputStream);
+            await writer.WriteAsync("{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{}}");
+            await writer.FlushAsync();
+            succeeded.Response.Close();
+        });
+        try
+        {
+            var input = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\"}\n" +
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\n";
+            var result = await RunAsync("Itoguruma.McpProxy",
+                ["--url", endpoint, "--credential-target", credentialTarget],
+                Path.Combine(_directory, "unused.db"), input);
+            await responseTask;
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("\"id\":1", result.StandardOutput, StringComparison.Ordinal);
+            Assert.Contains("HTTP 500", result.StandardOutput, StringComparison.Ordinal);
+            Assert.Contains("\"id\":2", result.StandardOutput, StringComparison.Ordinal);
+            Assert.Contains("\"result\":{}", result.StandardOutput, StringComparison.Ordinal);
+        }
+        finally
+        {
+            credentialStore.Delete();
+        }
+    }
+
+    [Fact]
+    public void Installer_WhenConfiguringClients_UsesCredentialProxyAndFallbackPaths()
     {
         var repositoryRoot = FindRepositoryRoot();
         var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
 
-        Assert.Contains("Authorization: Bearer ${ITOGURUMA_AUTH_TOKEN}", installer, StringComparison.Ordinal);
-        Assert.DoesNotContain("Authorization: Bearer $authenticationToken", installer, StringComparison.Ordinal);
+        Assert.Contains("$packageProxyRelativePath", installer, StringComparison.Ordinal);
+        Assert.Contains("--transport\", \"stdio", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("--bearer-token-env-var", installer, StringComparison.Ordinal);
         Assert.Contains("npm\\claude.cmd", installer, StringComparison.Ordinal);
         Assert.Contains(".local\\bin\\claude.exe", installer, StringComparison.Ordinal);
+        Assert.Contains("OpenAI\\Codex\\bin", installer, StringComparison.Ordinal);
 
         foreach (var document in new[] { "MCP_SETUP.md", "MCP_SETUP.ja.md" })
         {
             var content = File.ReadAllText(Path.Combine(repositoryRoot, document));
-            Assert.Contains("Authorization: Bearer ${ITOGURUMA_AUTH_TOKEN}", content, StringComparison.Ordinal);
+            Assert.Contains("mcp-proxy", content, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -646,8 +729,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Contains("Before=\"RemoveExistingProducts\"", package, StringComparison.Ordinal);
         Assert.Contains("Itoguruma Upgrade Backup", installer, StringComparison.Ordinal);
         Assert.Contains("foreach ($name in @(\"data\", \"config\", \"logs\"))", installer, StringComparison.Ordinal);
-        Assert.Contains("ITOGURUMA_AUTH_TOKEN", installer, StringComparison.Ordinal);
-        Assert.Contains("$b\\auth", package, StringComparison.Ordinal);
+        Assert.Contains("auth rotate", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("$b\\auth", package, StringComparison.Ordinal);
         Assert.DoesNotContain("SetEnvironmentVariable($name, $null", uninstaller, StringComparison.Ordinal);
     }
 
@@ -656,7 +739,7 @@ public sealed class ProcessIntegrationTests : IDisposable
     {
         var databasePath = Path.Combine(_directory, "single-instance.db");
         await using var first = await StartMcpServerAsync(databasePath);
-        var secondStartInfo = CreateMcpServerStartInfo(databasePath, first.ServerUrl, first.AuthenticationToken);
+        var secondStartInfo = CreateMcpServerStartInfo(databasePath, first.ServerUrl, first.CredentialTarget);
         using var second = Process.Start(secondStartInfo) ?? throw new InvalidOperationException("Process did not start.");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
@@ -675,7 +758,8 @@ public sealed class ProcessIntegrationTests : IDisposable
             Path.Combine(_directory, "startup-failure.db"),
             $"http://127.0.0.1:{GetAvailablePort()}",
             Guid.NewGuid().ToString("N"));
-        startInfo.Environment["ITOGURUMA_LOG_DIR"] = invalidLogDirectory;
+        var logOptionIndex = startInfo.ArgumentList.IndexOf("--log-dir");
+        startInfo.ArgumentList[logOptionIndex + 1] = invalidLogDirectory;
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
         var standardError = process.StandardError.ReadToEndAsync();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -730,11 +814,14 @@ public sealed class ProcessIntegrationTests : IDisposable
         Directory.CreateDirectory(_directory);
         var serverUrl = $"http://127.0.0.1:{GetAvailablePort()}";
         var authenticationToken = Guid.NewGuid().ToString("N");
-        var startInfo = CreateMcpServerStartInfo(databasePath, serverUrl, authenticationToken);
+        var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
+        var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
+        credentialStore.Save(authenticationToken);
+        var startInfo = CreateMcpServerStartInfo(databasePath, serverUrl, credentialTarget);
         var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
         var standardOutput = process.StandardOutput.ReadToEndAsync();
         var standardError = process.StandardError.ReadToEndAsync();
-        var server = new RunningMcpServer(process, standardOutput, standardError, serverUrl, authenticationToken);
+        var server = new RunningMcpServer(process, standardOutput, standardError, serverUrl, authenticationToken, credentialTarget, credentialStore);
         try
         {
             using var client = new HttpClient { BaseAddress = new Uri(serverUrl) };
@@ -762,7 +849,7 @@ public sealed class ProcessIntegrationTests : IDisposable
     private static ProcessStartInfo CreateMcpServerStartInfo(
         string databasePath,
         string serverUrl,
-        string authenticationToken)
+        string credentialTarget)
     {
         var startInfo = new ProcessStartInfo("dotnet")
         {
@@ -771,11 +858,14 @@ public sealed class ProcessIntegrationTests : IDisposable
             UseShellExecute = false
         };
         startInfo.ArgumentList.Add(FindApplicationAssembly("Itoguruma.Server"));
-        startInfo.Environment["ITOGURUMA_DB"] = databasePath;
-        startInfo.Environment["ITOGURUMA_URL"] = serverUrl;
-        startInfo.Environment["ITOGURUMA_AUTH_TOKEN"] = authenticationToken;
-        startInfo.Environment["ITOGURUMA_LOG_DIR"] = Path.Combine(
-            Path.GetDirectoryName(databasePath)!, "logs");
+        startInfo.ArgumentList.Add("--Itoguruma:DatabasePath");
+        startInfo.ArgumentList.Add(databasePath);
+        startInfo.ArgumentList.Add("--Itoguruma:ServerUrl");
+        startInfo.ArgumentList.Add(serverUrl);
+        startInfo.ArgumentList.Add("--credential-target");
+        startInfo.ArgumentList.Add(credentialTarget);
+        startInfo.ArgumentList.Add("--log-dir");
+        startInfo.ArgumentList.Add(Path.Combine(Path.GetDirectoryName(databasePath)!, "logs"));
         return startInfo;
     }
 
@@ -862,10 +952,13 @@ public sealed class ProcessIntegrationTests : IDisposable
         Task<string> standardOutput,
         Task<string> standardError,
         string serverUrl,
-        string authenticationToken) : IAsyncDisposable
+        string authenticationToken,
+        string credentialTarget,
+        WindowsCredentialTokenStore credentialStore) : IAsyncDisposable
     {
         public string ServerUrl { get; } = serverUrl;
         public string AuthenticationToken { get; } = authenticationToken;
+        public string CredentialTarget { get; } = credentialTarget;
 
         public async ValueTask DisposeAsync()
         {
@@ -875,6 +968,7 @@ public sealed class ProcessIntegrationTests : IDisposable
             await standardOutput;
             await standardError;
             process.Dispose();
+            credentialStore.Delete();
         }
     }
 }

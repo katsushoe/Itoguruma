@@ -95,6 +95,6 @@ powershell -ExecutionPolicy Bypass -File .\Install-Itoguruma.ps1 [-Version <vers
 | `-SkipCodex` | CodexへのMCP登録を省略します。 |
 | `-SkipClaude` | Claude CodeへのユーザースコープMCP登録を省略します。 |
 
-サーバーは`ITOGURUMA_URL`、`ITOGURUMA_DB`、`ITOGURUMA_AUTH_TOKEN`、`ITOGURUMA_CR_ROOT`を使用します。認証トークンは必須です。CR配送を使う場合は`ITOGURUMA_CR_ROOT`に共有CR領域のルートを設定します。
+サーバー設定は`config/appsettings.json`、認証トークンはWindows資格情報マネージャーを使用します。CR配送を使う場合は`Itoguruma:CrRoot`に共有CR領域のルートを設定します。
 
 `-PackagePath`はローカルのバイナリZIPを指定する検証・オフライン導入用オプションです。

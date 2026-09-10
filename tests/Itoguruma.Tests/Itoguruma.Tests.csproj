@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Itoguruma.Core/Itoguruma.Core.csproj" />
     <ProjectReference Include="../../src/Itoguruma.Server/Itoguruma.Server.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/Itoguruma.McpProxy/Itoguruma.McpProxy.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../src/Itoguruma.Cli/Itoguruma.Cli.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>

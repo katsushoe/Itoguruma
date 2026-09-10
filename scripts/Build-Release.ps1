@@ -36,6 +36,7 @@ if (!$releaseRoot.StartsWith($repoPrefix, [System.StringComparison]::OrdinalIgno
 
 $payloadRoot = Join-Path $releaseRoot "files"
 $serverRoot = Join-Path $payloadRoot "bin\server"
+$proxyRoot = Join-Path $payloadRoot ("bin\mcp-proxy\" + $normalizedVersion)
 $cliRoot = Join-Path $payloadRoot "bin\itoguruma"
 $viewerRoot = Join-Path $payloadRoot "bin\viewer"
 $migratorRoot = Join-Path $payloadRoot "bin\database-migrator"
@@ -53,7 +54,7 @@ if (Test-Path -LiteralPath $releaseRoot) {
     Remove-Item -LiteralPath $releaseRoot -Recurse -Force
 }
 
-New-Item -ItemType Directory -Force -Path $serverRoot, $cliRoot, $viewerRoot, $migratorRoot, $stopCodexRoot, $stopClaudeRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $serverRoot, $proxyRoot, $cliRoot, $viewerRoot, $migratorRoot, $stopCodexRoot, $stopClaudeRoot | Out-Null
 $publishArguments = @(
     "-c", $Configuration,
     "-r", "win-x64",
@@ -66,6 +67,7 @@ $publishArguments = @(
     "-p:InformationalVersion=$normalizedVersion"
 )
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Server\Itoguruma.Server.csproj")) + $publishArguments + @("-o", $serverRoot))
+Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.McpProxy\Itoguruma.McpProxy.csproj")) + $publishArguments + @("-o", $proxyRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Cli\Itoguruma.Cli.csproj")) + $publishArguments + @("-o", $cliRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.Viewer\Itoguruma.Viewer.csproj")) + $publishArguments + @("-o", $viewerRoot))
 Invoke-Checked "dotnet" (@("publish", (Join-Path $repoRoot "src\Itoguruma.DatabaseMigrator\Itoguruma.DatabaseMigrator.csproj")) + $publishArguments + @("-o", $migratorRoot))

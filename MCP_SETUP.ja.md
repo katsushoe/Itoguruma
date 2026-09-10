@@ -4,12 +4,12 @@
 
 ## サーバー
 
-Itogurumaをインストールし、`ITOGURUMA_AUTH_TOKEN`を設定してloopbackサーバーを起動します。MCP endpointの既定値は`http://127.0.0.1:47631/mcp`です。
+Itogurumaをインストールしてloopbackサーバーを起動します。インストーラーはBearerトークンをWindows資格情報マネージャーへ保存し、ローカルstdioプロキシを登録します。Streamable HTTP endpointは`http://127.0.0.1:47631/mcp`のままです。
 
 ## Codex
 
 ```powershell
-codex mcp add itoguruma --url "http://127.0.0.1:47631/mcp" --bearer-token-env-var ITOGURUMA_AUTH_TOKEN
+codex mcp add itoguruma -- "C:\Itoguruma\bin\mcp-proxy\<version>\Itoguruma.McpProxy.exe" --url "http://127.0.0.1:47631/mcp"
 ```
 
 インストーラが生成する`examples/codex-hooks.json`のライフサイクル設定を、ユーザーまたはプロジェクトの`hooks.json`へ統合します。無関係なHookを上書きしないでください。
@@ -17,7 +17,7 @@ codex mcp add itoguruma --url "http://127.0.0.1:47631/mcp" --bearer-token-env-va
 ## Claude Code
 
 ```powershell
-claude mcp add --transport http --scope user --header 'Authorization: Bearer ${ITOGURUMA_AUTH_TOKEN}' itoguruma "http://127.0.0.1:47631/mcp"
+claude mcp add --transport stdio --scope user itoguruma -- "C:\Itoguruma\bin\mcp-proxy\<version>\Itoguruma.McpProxy.exe" --url "http://127.0.0.1:47631/mcp"
 ```
 
 `examples/claude-settings.json`を対象プロジェクトの既存設定へ統合します。

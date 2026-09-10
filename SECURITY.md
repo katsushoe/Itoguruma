@@ -8,7 +8,7 @@ Itoguruma is designed for a single Windows user and a loopback-only HTTP endpoin
 
 ## Secrets and authentication
 
-Every MCP request requires the bearer token in `ITOGURUMA_AUTH_TOKEN`. Do not print, commit, log, or place the token in shared documents. Use `itoguruma auth status` to inspect presence and `itoguruma auth rotate` after suspected disclosure. The old token stops working immediately; restart and reconfigure all clients.
+Every Streamable HTTP MCP request requires the bearer token stored as the per-user Windows credential `Itoguruma/McpBearerToken`. The local stdio proxy reads it and adds the header. Do not print, commit, log, or place the token in configuration or shared documents. Use `itoguruma auth status` to inspect presence and `itoguruma auth rotate` after suspected disclosure. The old token stops working immediately; restart the server and clients.
 
 ## Data and change requests
 

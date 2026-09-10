@@ -60,8 +60,7 @@ public sealed class AuthCommand(
             return 2;
         }
         output.WriteLine(AppLocalization.Text("Authentication token rotated. The token value is not displayed.", "認証トークンを更新しました。トークン値は表示しません。"));
-        output.WriteLine("Next: restart the ItogurumaServer scheduled task, open a new terminal, and restart Codex and Claude Code.");
-        output.WriteLine("Reconfigure clients that store the bearer token directly, including Claude Code and Hataori.");
+        output.WriteLine("Next: restart the ItogurumaServer scheduled task, Codex, Claude Code, and Hataori.");
         return 0;
     }
 }

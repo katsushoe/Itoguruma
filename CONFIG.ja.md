@@ -16,7 +16,7 @@
 
 | 環境変数／キー | 必須 | 型 | 既定値 | 制約 |
 | :--- | :---: | :--- | :--- | :--- |
-| `ITOGURUMA_AUTH_TOKEN` | はい | 文字列 | なし | 秘密のBearerトークン。十分に長い乱数を使用します。 |
+| Windows資格情報`Itoguruma/McpBearerToken` | はい | 秘密情報 | なし | インストーラーと`itoguruma auth rotate`が管理します。 |
 | `ITOGURUMA_URL` | いいえ | 絶対HTTP URL | `http://127.0.0.1:47631` | 対応構成ではloopbackに限定します。 |
 | `ITOGURUMA_DB` | いいえ | ファイルパス | Local Application Data配下のDB | 親ディレクトリへの書き込み権限が必要です。 |
 | `ITOGURUMA_CONFIG_DIR` | いいえ | ディレクトリパス | インストール先の`config` | 生成設定の書き込み権限が必要です。 |
@@ -27,7 +27,5 @@
 ## 例
 
 ```powershell
-$env:ITOGURUMA_AUTH_TOKEN = "<random-secret>"
-$env:ITOGURUMA_URL = "http://127.0.0.1:47631"
-$env:ITOGURUMA_DB = "C:\Itoguruma\data\messages.db"
+`config/appsettings.json`で`Itoguruma:ServerUrl`、`Itoguruma:DatabasePath`、`Itoguruma:CrRoot`を設定します。インストーラーはインストール先に応じたパスを書き込みます。
 ```

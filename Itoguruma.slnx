@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="src/Itoguruma.Core/Itoguruma.Core.csproj" />
   <Project Path="src/Itoguruma.Server/Itoguruma.Server.csproj" />
+  <Project Path="src/Itoguruma.McpProxy/Itoguruma.McpProxy.csproj" />
   <Project Path="src/Itoguruma.Cli/Itoguruma.Cli.csproj" />
   <Project Path="src/Itoguruma.DatabaseMigrator/Itoguruma.DatabaseMigrator.csproj" />
   <Project Path="src/Itoguruma.Viewer/Itoguruma.Viewer.csproj" />

@@ -20,10 +20,8 @@ static async Task<int> RunServerAsync(string[] args)
 {
     AppLocalization.ConfigureFromEnvironment();
 
-    var configDirectory = Environment.GetEnvironmentVariable("ITOGURUMA_CONFIG_DIR")
-        ?? AppContext.BaseDirectory;
-    var logDirectory = Environment.GetEnvironmentVariable("ITOGURUMA_LOG_DIR")
-        ?? Path.Combine(AppContext.BaseDirectory, "logs");
+    var configDirectory = GetOption(args, "--config-dir") ?? AppContext.BaseDirectory;
+    var logDirectory = GetOption(args, "--log-dir") ?? Path.Combine(AppContext.BaseDirectory, "logs");
     Directory.CreateDirectory(logDirectory);
     var logPath = Path.Combine(logDirectory, $"itoguruma-server-{DateTimeOffset.Now:yyyyMMdd}.log");
     using var logStream = new FileStream(logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
@@ -39,8 +37,7 @@ static async Task<int> RunServerAsync(string[] args)
         Args = args,
         ContentRootPath = configDirectory
     });
-    var serverUrl = Environment.GetEnvironmentVariable("ITOGURUMA_URL")
-        ?? builder.Configuration["Itoguruma:ServerUrl"]
+    var serverUrl = builder.Configuration["Itoguruma:ServerUrl"]
         ?? throw new InvalidOperationException("Itoguruma:ServerUrl is required.");
     if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri)
         || !serverUri.IsLoopback
@@ -49,19 +46,17 @@ static async Task<int> RunServerAsync(string[] args)
     {
         throw new InvalidOperationException("Itoguruma:ServerUrl must be an HTTP loopback origin without a path.");
     }
-    var databasePath = Environment.GetEnvironmentVariable("ITOGURUMA_DB")
-        ?? builder.Configuration["Itoguruma:DatabasePath"]
+    var databasePath = builder.Configuration["Itoguruma:DatabasePath"]
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Itoguruma", "messages.db");
-    var singleInstanceWaitSecondsText = Environment.GetEnvironmentVariable("ITOGURUMA_SINGLE_INSTANCE_WAIT_SECONDS")
-        ?? builder.Configuration["Itoguruma:SingleInstanceWaitSeconds"]
+    var singleInstanceWaitSecondsText = builder.Configuration["Itoguruma:SingleInstanceWaitSeconds"]
         ?? "5";
     if (!int.TryParse(singleInstanceWaitSecondsText, out var singleInstanceWaitSeconds)
         || singleInstanceWaitSeconds is < 0 or > 60)
     {
         throw new InvalidOperationException("Itoguruma:SingleInstanceWaitSeconds must be between 0 and 60.");
     }
-    var authenticationToken = Environment.GetEnvironmentVariable("ITOGURUMA_AUTH_TOKEN")
-        ?? builder.Configuration["Itoguruma:AuthenticationToken"];
+    var tokenStore = new WindowsCredentialTokenStore(GetOption(args, "--credential-target"));
+    var authenticationToken = tokenStore.Read();
     if (string.IsNullOrWhiteSpace(authenticationToken))
     {
         throw new InvalidOperationException("Itoguruma:AuthenticationToken is required.");
@@ -77,13 +72,12 @@ static async Task<int> RunServerAsync(string[] args)
     if (databaseInstance is null) return 1;
 
     builder.WebHost.UseUrls(serverUrl);
-    var crRoot = Environment.GetEnvironmentVariable("ITOGURUMA_CR_ROOT")
-        ?? builder.Configuration["Itoguruma:CrRoot"];
+    var crRoot = builder.Configuration["Itoguruma:CrRoot"];
     var changeRequestValidator = string.IsNullOrWhiteSpace(crRoot) ? null : new ChangeRequestValidator(crRoot);
     builder.Services.AddSingleton(provider => new MessagingService(
         new SqliteMessageStore(databasePath, logger: provider.GetRequiredService<ILogger<SqliteMessageStore>>()),
         changeRequestValidator));
-    builder.Services.AddSingleton<IUserTokenStore, UserEnvironmentTokenStore>();
+    builder.Services.AddSingleton<IUserTokenStore>(tokenStore);
     builder.Services.AddSingleton<AuthenticationTokenService>();
     builder.Services
         .AddMcpServer(options =>
@@ -130,6 +124,12 @@ static async Task<int> RunServerAsync(string[] args)
     app.MapMcp("/mcp");
     await app.RunAsync();
     return 0;
+}
+
+static string? GetOption(string[] arguments, string name)
+{
+    var index = Array.IndexOf(arguments, name);
+    return index >= 0 && index + 1 < arguments.Length ? arguments[index + 1] : null;
 }
 
 static bool IsAllowedOrigin(string? origin)

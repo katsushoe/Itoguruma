@@ -165,6 +165,12 @@ try {
             throw "The binary ZIP is incomplete. Missing file: $relativePath"
         }
     }
+    $packageProxy = @(Get-ChildItem -LiteralPath (Join-Path $extractRoot "bin\mcp-proxy") `
+        -Filter "Itoguruma.McpProxy.exe" -File -Recurse)
+    if ($packageProxy.Count -ne 1) {
+        throw "The binary ZIP must contain exactly one versioned Itoguruma.McpProxy.exe."
+    }
+    $packageProxyRelativePath = $packageProxy[0].FullName.Substring($extractRoot.TrimEnd("\").Length).TrimStart("\")
 
     $taskName = "ItogurumaServer"
     $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -209,6 +215,12 @@ try {
             throw "The existing Itoguruma.Server process did not release its executable."
         }
     }
+    $installedPackageProxyPath = Join-Path $destinationRoot $packageProxyRelativePath
+    if ((Test-Path -LiteralPath $installedPackageProxyPath -PathType Leaf) -and
+        ((Get-FileHash -LiteralPath $installedPackageProxyPath -Algorithm SHA256).Hash -eq
+         (Get-FileHash -LiteralPath $packageProxy[0].FullName -Algorithm SHA256).Hash)) {
+        Remove-Item -LiteralPath $packageProxy[0].FullName -Force
+    }
     New-Item -ItemType Directory -Force -Path $destinationRoot | Out-Null
     Copy-Item -Path (Join-Path $extractRoot "*") -Destination $destinationRoot -Recurse -Force
     New-Item -ItemType Directory -Force -Path $configRoot, $logRoot | Out-Null
@@ -218,11 +230,15 @@ try {
     $settingsPath = Join-Path $configRoot "appsettings.json"
     $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
     $settings.Itoguruma.Language = $Language
+    $settings.Itoguruma.ServerUrl = $ServerUrl
     $settingsJson = $settings | ConvertTo-Json -Depth 10
     [System.IO.File]::WriteAllText($settingsPath, $settingsJson, (New-Object System.Text.UTF8Encoding($false)))
     $dataRoot = Join-Path $destinationRoot "data"
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
     $databasePath = Join-Path $dataRoot "messages.db"
+    $settings.Itoguruma.DatabasePath = $databasePath
+    $settingsJson = $settings | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($settingsPath, $settingsJson, (New-Object System.Text.UTF8Encoding($false)))
     $legacyRoot = Join-Path $env:LOCALAPPDATA "Programs\Itoguruma"
     $legacyDatabasePath = Join-Path $legacyRoot "data\messages.db"
     if (![System.IO.Path]::GetFullPath($legacyRoot).Equals($destinationRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
@@ -240,14 +256,6 @@ try {
             $backupPath = Join-Path $upgradeBackupRoot $name
             if (Test-Path -LiteralPath $backupPath) {
                 Copy-Item -LiteralPath $backupPath -Destination $destinationRoot -Recurse -Force
-            }
-        }
-        $authenticationTokenBackupPath = Join-Path $upgradeBackupRoot "auth"
-        if (Test-Path -LiteralPath $authenticationTokenBackupPath -PathType Leaf) {
-            $upgradeAuthenticationToken = [System.IO.File]::ReadAllText($authenticationTokenBackupPath)
-            if (![string]::IsNullOrWhiteSpace($upgradeAuthenticationToken)) {
-                [Environment]::SetEnvironmentVariable(
-                    "ITOGURUMA_AUTH_TOKEN", $upgradeAuthenticationToken, "User")
             }
         }
         Remove-Item -LiteralPath $upgradeBackupRoot -Recurse -Force
@@ -281,26 +289,16 @@ try {
     }
 
     $serverPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
+    $proxyPath = Join-Path $destinationRoot $packageProxyRelativePath
     $mcpUrl = $ServerUrl.TrimEnd("/") + "/mcp"
-    $authenticationToken = [Environment]::GetEnvironmentVariable("ITOGURUMA_AUTH_TOKEN", "User")
-    if ([string]::IsNullOrWhiteSpace($authenticationToken)) {
-        $tokenBytes = New-Object byte[] 32
-        $random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        try { $random.GetBytes($tokenBytes) }
-        finally { $random.Dispose() }
-        $authenticationToken = [Convert]::ToBase64String($tokenBytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
-    }
-    [Environment]::SetEnvironmentVariable("ITOGURUMA_AUTH_TOKEN", $authenticationToken, "User")
-    [Environment]::SetEnvironmentVariable("ITOGURUMA_DB", $databasePath, "User")
-    [Environment]::SetEnvironmentVariable("ITOGURUMA_URL", $ServerUrl, "User")
-    [Environment]::SetEnvironmentVariable("ITOGURUMA_CONFIG_DIR", $configRoot, "User")
-    [Environment]::SetEnvironmentVariable("ITOGURUMA_LOG_DIR", $logRoot, "User")
-    $env:ITOGURUMA_AUTH_TOKEN = $authenticationToken
-    $env:ITOGURUMA_DB = $databasePath
-    $env:ITOGURUMA_URL = $ServerUrl
-    $env:ITOGURUMA_CONFIG_DIR = $configRoot
-    $env:ITOGURUMA_LOG_DIR = $logRoot
     $cliPath = Join-Path $cliDirectory "itoguruma.exe"
+    & $cliPath auth status | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Authentication status check failed." }
+    "ROTATE" | & $cliPath auth rotate | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Authentication credential creation failed." }
+    foreach ($variableName in @("ITOGURUMA_AUTH_TOKEN", "ITOGURUMA_DB", "ITOGURUMA_URL", "ITOGURUMA_CONFIG_DIR", "ITOGURUMA_LOG_DIR")) {
+        [Environment]::SetEnvironmentVariable($variableName, $null, "User")
+    }
     function New-HookSettings {
         param([string]$AgentId)
 
@@ -329,10 +327,14 @@ try {
     New-HookSettings "claude-main" | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "claude-settings.json") -Encoding utf8
     New-HookSettings "codex-main" | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "codex-hooks.json") -Encoding utf8
     if (!$SkipCodex) {
-        $codex = Get-Command codex -ErrorAction SilentlyContinue
+        $codexCandidates = @(Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin") `
+            -Filter "codex.exe" -File -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -ExpandProperty FullName)
+        $codex = Find-ClientCommand "codex" $codexCandidates
         if ($null -ne $codex) {
             & $codex.Source mcp remove itoguruma 2>$null | Out-Null
-            Invoke-ClientCommand $codex @("mcp", "add", "itoguruma", "--url", $mcpUrl, "--bearer-token-env-var", "ITOGURUMA_AUTH_TOKEN")
+            Invoke-ClientCommand $codex @("mcp", "add", "itoguruma", "--", $proxyPath, "--url", $mcpUrl)
         }
     }
     if (!$SkipClaude) {
@@ -350,15 +352,16 @@ try {
                 $ErrorActionPreference = $previousErrorActionPreference
             }
             Invoke-ClientCommand $claude @(
-                "mcp", "add", "--transport", "http", "--scope", "user",
-                "itoguruma", $mcpUrl, "--header", 'Authorization: Bearer ${ITOGURUMA_AUTH_TOKEN}')
+                "mcp", "add", "--transport", "stdio", "--scope", "user",
+                "itoguruma", "--", $proxyPath, "--url", $mcpUrl)
         }
     }
 
     $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
     Remove-ItemProperty -Path $runKey -Name "ItogurumaServer" -ErrorAction SilentlyContinue
     $taskUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $taskAction = New-ScheduledTaskAction -Execute $serverPath -WorkingDirectory (Split-Path $serverPath)
+    $taskArguments = '--config-dir "' + $configRoot + '" --log-dir "' + $logRoot + '"'
+    $taskAction = New-ScheduledTaskAction -Execute $serverPath -Argument $taskArguments -WorkingDirectory (Split-Path $serverPath)
     $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $taskUser
     $taskPrincipal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType Interactive -RunLevel Limited
     $taskSettings = New-ScheduledTaskSettingsSet `
@@ -377,6 +380,7 @@ try {
         -Force | Out-Null
     $serverProcess = Start-Process `
         -FilePath $serverPath `
+        -ArgumentList @("--config-dir", $configRoot, "--log-dir", $logRoot) `
         -WorkingDirectory (Split-Path $serverPath) `
         -WindowStyle Hidden `
         -PassThru
