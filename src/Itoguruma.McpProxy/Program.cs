@@ -1,4 +1,6 @@
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Itoguruma.Core;
 
@@ -13,20 +15,19 @@ try
     client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
-    string? line;
-    while ((line = await Console.In.ReadLineAsync()) is not null)
+    await foreach (var requestJson in ReadRequestsAsync(Console.In))
     {
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
-                Content = new StringContent(line, System.Text.Encoding.UTF8, "application/json")
+                Content = new StringContent(requestJson, Encoding.UTF8, "application/json")
             };
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             if (response.StatusCode == System.Net.HttpStatusCode.Accepted) continue;
             if (!response.IsSuccessStatusCode)
             {
-                await WriteErrorResponseAsync(line,
+                await WriteErrorResponseAsync(requestJson,
                     $"Itoguruma server returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).");
                 continue;
             }
@@ -48,7 +49,7 @@ try
         catch (Exception exception) when (exception is HttpRequestException or IOException or TaskCanceledException)
         {
             await Console.Error.WriteLineAsync($"Itoguruma MCP proxy request failed: {exception}");
-            await WriteErrorResponseAsync(line, "Itoguruma server communication failed.");
+            await WriteErrorResponseAsync(requestJson, "Itoguruma server communication failed.");
         }
     }
     return 0;
@@ -72,6 +73,38 @@ static async Task WriteErrorResponseAsync(string requestJson, string message)
     });
     await Console.Out.WriteLineAsync(response);
     await Console.Out.FlushAsync();
+}
+
+static async IAsyncEnumerable<string> ReadRequestsAsync(
+    TextReader reader,
+    [EnumeratorCancellation] CancellationToken cancellationToken = default)
+{
+    var request = new StringBuilder();
+    var buffer = new char[1];
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    while (await reader.ReadAsync(buffer.AsMemory(), cancellationToken) > 0)
+    {
+        var character = buffer[0];
+        if (depth == 0 && char.IsWhiteSpace(character)) continue;
+        request.Append(character);
+        if (inString)
+        {
+            if (escaped) escaped = false;
+            else if (character == '\\') escaped = true;
+            else if (character == '"') inString = false;
+            continue;
+        }
+        if (character == '"') inString = true;
+        else if (character is '{' or '[') depth++;
+        else if (character is '}' or ']') depth--;
+        if (depth != 0) continue;
+        yield return request.ToString();
+        request.Clear();
+    }
+    if (request.Length > 0)
+        throw new JsonException("The MCP stdio stream ended with an incomplete JSON request.");
 }
 
 static string? GetOption(string[] arguments, string name)

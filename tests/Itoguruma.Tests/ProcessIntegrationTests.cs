@@ -669,6 +669,50 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpProxy_WhenRequestSpansLines_ForwardsOneCompleteJsonRequest()
+    {
+        var port = GetAvailablePort();
+        var endpoint = $"http://127.0.0.1:{port}/mcp/";
+        var token = Guid.NewGuid().ToString("N");
+        var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
+        var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
+        credentialStore.Save(token);
+        using var listener = new HttpListener();
+        listener.Prefixes.Add(endpoint);
+        listener.Start();
+        var responseTask = Task.Run(async () =>
+        {
+            var context = await listener.GetContextAsync();
+            using var reader = new StreamReader(context.Request.InputStream);
+            var request = await reader.ReadToEndAsync();
+            using var document = JsonDocument.Parse(request);
+            Assert.Equal("tools/call", document.RootElement.GetProperty("method").GetString());
+            Assert.Equal("first\nsecond", document.RootElement.GetProperty("params").GetProperty("body").GetString());
+            context.Response.ContentType = "application/json";
+            await using var writer = new StreamWriter(context.Response.OutputStream);
+            await writer.WriteAsync("{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{}}");
+            await writer.FlushAsync();
+            context.Response.Close();
+        });
+        try
+        {
+            var input = "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n" +
+                "  \"params\": { \"body\": \"first\\nsecond\" }\n}\n";
+            var result = await RunAsync("Itoguruma.McpProxy",
+                ["--url", endpoint, "--credential-target", credentialTarget],
+                Path.Combine(_directory, "unused.db"), input);
+            await responseTask;
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("\"id\":3", result.StandardOutput, StringComparison.Ordinal);
+            Assert.Contains("\"result\":{}", result.StandardOutput, StringComparison.Ordinal);
+        }
+        finally
+        {
+            credentialStore.Delete();
+        }
+    }
+
+    [Fact]
     public void Installer_WhenConfiguringClients_UsesCredentialProxyAndFallbackPaths()
     {
         var repositoryRoot = FindRepositoryRoot();
