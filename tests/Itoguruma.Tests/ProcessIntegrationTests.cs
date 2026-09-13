@@ -625,6 +625,53 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpProxy_WhenSseResponseRemainsOpen_ProcessesNextRequest()
+    {
+        var port = GetAvailablePort();
+        var endpoint = $"http://127.0.0.1:{port}/mcp/";
+        var token = Guid.NewGuid().ToString("N");
+        var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
+        var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
+        credentialStore.Save(token);
+        using var listener = new HttpListener();
+        listener.Prefixes.Add(endpoint);
+        listener.Start();
+        var responseTask = Task.Run(async () =>
+        {
+            var first = await listener.GetContextAsync();
+            first.Response.ContentType = "text/event-stream";
+            first.Response.SendChunked = true;
+            await using var firstWriter = new StreamWriter(first.Response.OutputStream);
+            await firstWriter.WriteAsync("data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n");
+            await firstWriter.FlushAsync();
+
+            var second = await listener.GetContextAsync();
+            second.Response.ContentType = "application/json";
+            await using var secondWriter = new StreamWriter(second.Response.OutputStream);
+            await secondWriter.WriteAsync("{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{}}");
+            await secondWriter.FlushAsync();
+            second.Response.Close();
+            first.Response.Close();
+        });
+        try
+        {
+            var input = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\"}\n" +
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\"}\n";
+            var result = await RunAsync("Itoguruma.McpProxy",
+                ["--url", endpoint, "--credential-target", credentialTarget],
+                Path.Combine(_directory, "unused.db"), input);
+            await responseTask;
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("\"id\":1", result.StandardOutput, StringComparison.Ordinal);
+            Assert.Contains("\"id\":2", result.StandardOutput, StringComparison.Ordinal);
+        }
+        finally
+        {
+            credentialStore.Delete();
+        }
+    }
+
+    [Fact]
     public async Task McpProxy_WhenServerReturnsError_ReportsErrorAndContinuesProcessing()
     {
         var port = GetAvailablePort();
