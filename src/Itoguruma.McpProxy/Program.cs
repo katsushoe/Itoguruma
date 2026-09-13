@@ -39,11 +39,21 @@ try
             }
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var reader = new StreamReader(stream);
+            var responseData = new StringBuilder();
             while (await reader.ReadLineAsync() is { } responseLine)
             {
-                if (!responseLine.StartsWith("data:", StringComparison.Ordinal)) continue;
-                await Console.Out.WriteLineAsync(responseLine[5..].TrimStart());
+                if (responseLine.StartsWith("data:", StringComparison.Ordinal))
+                {
+                    if (responseData.Length > 0) responseData.Append('\n');
+                    responseData.Append(responseLine[5..].TrimStart());
+                    continue;
+                }
+                if (responseLine.Length != 0 || responseData.Length == 0) continue;
+                var responseJson = responseData.ToString();
+                await Console.Out.WriteLineAsync(responseJson);
                 await Console.Out.FlushAsync();
+                if (IsResponseForRequest(requestJson, responseJson)) break;
+                responseData.Clear();
             }
         }
         catch (Exception exception) when (exception is HttpRequestException or IOException or TaskCanceledException)
@@ -59,6 +69,22 @@ catch (Exception exception)
 {
     await Console.Error.WriteLineAsync($"Itoguruma MCP proxy failed: {exception}");
     return 1;
+}
+
+static bool IsResponseForRequest(string requestJson, string responseJson)
+{
+    using var request = JsonDocument.Parse(requestJson);
+    if (!request.RootElement.TryGetProperty("id", out var requestId)) return false;
+    try
+    {
+        using var response = JsonDocument.Parse(responseJson);
+        return response.RootElement.TryGetProperty("id", out var responseId)
+            && requestId.GetRawText() == responseId.GetRawText();
+    }
+    catch (JsonException)
+    {
+        return false;
+    }
 }
 
 static async Task WriteErrorResponseAsync(string requestJson, string message)
