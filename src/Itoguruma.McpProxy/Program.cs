@@ -4,6 +4,9 @@ using System.Text;
 using System.Text.Json;
 using Itoguruma.Core;
 
+Console.InputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
 try
 {
     var endpoint = GetOption(args, "--url")
