@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Text;
 using Itoguruma.Core;
 using Xunit;
 
@@ -752,6 +753,48 @@ public sealed class ProcessIntegrationTests : IDisposable
             Assert.Equal(0, result.ExitCode);
             Assert.Contains("\"id\":3", result.StandardOutput, StringComparison.Ordinal);
             Assert.Contains("\"result\":{}", result.StandardOutput, StringComparison.Ordinal);
+        }
+        finally
+        {
+            credentialStore.Delete();
+        }
+    }
+
+    [Fact]
+    public async Task McpProxy_WhenRequestContainsJapanese_ForwardsUtf8Body()
+    {
+        var port = GetAvailablePort();
+        var endpoint = $"http://127.0.0.1:{port}/mcp/";
+        var token = Guid.NewGuid().ToString("N");
+        var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
+        var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
+        credentialStore.Save(token);
+        using var listener = new HttpListener();
+        listener.Prefixes.Add(endpoint);
+        listener.Start();
+        var responseTask = Task.Run(async () =>
+        {
+            var context = await listener.GetContextAsync();
+            using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+            using var document = JsonDocument.Parse(await reader.ReadToEndAsync());
+            Assert.Equal("再起動後のテスト送信です。", document.RootElement
+                .GetProperty("params").GetProperty("arguments").GetProperty("body").GetString());
+            context.Response.ContentType = "application/json";
+            await using var writer = new StreamWriter(context.Response.OutputStream, Encoding.UTF8);
+            await writer.WriteAsync("{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{}}");
+            await writer.FlushAsync();
+            context.Response.Close();
+        });
+        try
+        {
+            var input = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\"," +
+                "\"params\":{\"name\":\"send_message\",\"arguments\":{\"body\":\"再起動後のテスト送信です。\"}}}\n";
+            var result = await RunAsync("Itoguruma.McpProxy",
+                ["--url", endpoint, "--credential-target", credentialTarget],
+                Path.Combine(_directory, "unused.db"), input);
+            await responseTask;
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("\"id\":4", result.StandardOutput, StringComparison.Ordinal);
         }
         finally
         {
