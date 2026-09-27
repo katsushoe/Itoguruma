@@ -1,31 +1,12 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/itoguruma/itoguruma.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\""
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/itoguruma/itoguruma.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\""
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/artifacts/itoguruma/itoguruma.exe\" hook --agent claude-main --db \"$CLAUDE_PROJECT_DIR/data/messages.db\""
+            "command": "\"C:\\Itoguruma\\bin\\itoguruma\\itoguruma.exe\" hook --agent claude-main --consumer-agent claude-main --db \"C:\\Itoguruma\\data\\messages.db\"",
+            "timeout": 15
           }
         ]
       }

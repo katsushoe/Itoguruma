@@ -823,6 +823,29 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Installer_WhenGeneratingHookExamples_UsesClientSpecificEvents()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
+        var claudeExample = File.ReadAllText(Path.Combine(repositoryRoot, ".claude", "settings.example.json"));
+        using var claudeJson = JsonDocument.Parse(claudeExample);
+
+        Assert.Contains(
+            "New-HookSettings \"claude-main\" @(\"UserPromptSubmit\")",
+            installer,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "New-HookSettings \"codex-main\" @(\"SessionStart\", \"UserPromptSubmit\", \"Stop\")",
+            installer,
+            StringComparison.Ordinal);
+
+        var claudeHooks = claudeJson.RootElement.GetProperty("hooks");
+        Assert.True(claudeHooks.TryGetProperty("UserPromptSubmit", out _));
+        Assert.False(claudeHooks.TryGetProperty("SessionStart", out _));
+        Assert.False(claudeHooks.TryGetProperty("Stop", out _));
+    }
+
+    [Fact]
     public void Installer_WhenStoppingExistingServer_WaitsForCompleteProcessExit()
     {
         var repositoryRoot = FindRepositoryRoot();

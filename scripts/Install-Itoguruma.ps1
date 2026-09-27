@@ -300,7 +300,7 @@ try {
         [Environment]::SetEnvironmentVariable($variableName, $null, "User")
     }
     function New-HookSettings {
-        param([string]$AgentId)
+        param([string]$AgentId, [string[]]$Events)
 
         $hookCommand = '"' + $cliPath + '" hook --agent ' + $AgentId + ' --consumer-agent ' + $AgentId + ' --db "' + $databasePath + '"'
         $cliPowerShellPath = $cliPath.Replace("'", "''")
@@ -314,18 +314,14 @@ try {
                 timeout = 15
             })
         }
-        return @{
-            hooks = @{
-                SessionStart = @($hookEntry)
-                UserPromptSubmit = @($hookEntry)
-                Stop = @($hookEntry)
-            }
-        }
+        $eventHooks = [ordered]@{}
+        foreach ($eventName in $Events) { $eventHooks[$eventName] = @($hookEntry) }
+        return @{ hooks = $eventHooks }
     }
     $examplesRoot = Join-Path $destinationRoot "examples"
     New-Item -ItemType Directory -Force -Path $examplesRoot | Out-Null
-    New-HookSettings "claude-main" | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "claude-settings.json") -Encoding utf8
-    New-HookSettings "codex-main" | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "codex-hooks.json") -Encoding utf8
+    New-HookSettings "claude-main" @("UserPromptSubmit") | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "claude-settings.json") -Encoding utf8
+    New-HookSettings "codex-main" @("SessionStart", "UserPromptSubmit", "Stop") | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "codex-hooks.json") -Encoding utf8
     if (!$SkipCodex) {
         $codexCandidates = @(Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin") `
             -Filter "codex.exe" -File -Recurse -ErrorAction SilentlyContinue |

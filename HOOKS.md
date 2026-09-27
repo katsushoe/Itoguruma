@@ -2,7 +2,7 @@
 
 [English](HOOKS.md) | [日本語](HOOKS.ja.md)
 
-Itoguruma checks a shared inbox during the `SessionStart`, `UserPromptSubmit`, and `Stop` lifecycle events of Codex and Claude Code. Hooks lease messages but do not acknowledge them automatically.
+Itoguruma checks a shared inbox during the `SessionStart`, `UserPromptSubmit`, and `Stop` lifecycle events of Codex, and during the `UserPromptSubmit` event of Claude Code. Because checking on every prompt submission does not miss messages, the default Claude Code example omits the redundant `SessionStart` hook and the `Stop` hook, which would repeatedly block turn completion while messages remain unacknowledged. Hooks lease messages but do not acknowledge them automatically.
 
 ## Generated examples
 

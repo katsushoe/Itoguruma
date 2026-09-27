@@ -2,7 +2,7 @@
 
 [English](HOOKS.md) | [日本語](HOOKS.ja.md)
 
-Itogurumaは、CodexとClaude Codeの`SessionStart`、`UserPromptSubmit`、`Stop`で共有Inboxを確認します。Hookはメッセージをleaseしますが、自動ではACKしません。
+Itogurumaは、Codexでは`SessionStart`、`UserPromptSubmit`、`Stop`、Claude Codeでは`UserPromptSubmit`で共有Inboxを確認します。Claude Codeではプロンプト送信ごとの確認で受信を見落とさないため、重複する`SessionStart`と、未ACKメッセージで応答終了を繰り返し止める`Stop`は既定の設定例に含めません。Hookはメッセージをleaseしますが、自動ではACKしません。
 
 ## 生成される設定例
 
