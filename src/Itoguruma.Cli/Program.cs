@@ -52,7 +52,7 @@ try
         changeRequestValidator);
     await service.InitializeAsync();
     if (arguments[0] == "project") return await RunProjectAsync(service);
-    if (arguments[0] == "hook") return await RunHookAsync(service, Required("--agent"), Required("--consumer-agent"));
+    if (arguments[0] == "hook") return await RunHookAsync(service, Required("--consumer-agent"));
     object result = arguments[0] switch
     {
         "register" => await service.RegisterAgentAsync(Required("--agent"), Required("--type"), Required("--project"), Option("--name"), Option("--session"), Option("--metadata")),
@@ -138,15 +138,28 @@ async Task<int> RunProjectAsync(MessagingService messagingService)
     return 0;
 }
 
-async Task<int> RunHookAsync(MessagingService messagingService, string agentId, string consumerAgentId)
+async Task<int> RunHookAsync(MessagingService messagingService, string consumerAgentId)
 {
     var input = await Console.In.ReadToEndAsync();
-    var eventName = ParseEventName(input);
+    var eventName = ReadHookInputString(input, "hook_event_name");
+    var projectInbox = arguments.Contains("--project-inbox", StringComparer.Ordinal);
+    if (projectInbox == (Option("--agent") is not null))
+        throw new ArgumentException(AppLocalization.Text("Specify exactly one of --agent or --project-inbox.",
+            "--agentと--project-inboxのどちらか一方だけを指定してください。"));
+    string agentId;
+    if (projectInbox)
+    {
+        // Claude Code/Codexはhook入力のcwdに作業ディレクトリを渡します。
+        var workingDirectory = ReadHookInputString(input, "cwd") ?? Environment.CurrentDirectory;
+        var project = await messagingService.ResolveWorkspaceProjectAsync(workingDirectory);
+        if (project is null) return 0;
+        agentId = project.InboxAgentId;
+    }
+    else agentId = Required("--agent");
     var messages = await messagingService.GetMessagesAsync(agentId, Number("--limit",50),
         TimeSpan.FromSeconds(Number("--lease-seconds",300)), Option("--thread"), Option("--message-type"), consumerAgentId);
-    if (messages.Count == 0) return 0;
-    var context = AppLocalization.Text("Itoguruma inbox messages:\n", "Itoguruma受信メッセージ:\n") + JsonSerializer.Serialize(messages,
-        new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
+    var context = HookContextFormatter.Format(agentId, consumerAgentId, messages);
+    if (context is null) return 0;
     if (string.Equals(eventName, "Stop", StringComparison.Ordinal))
     {
         Console.Error.WriteLine(context);
@@ -156,13 +169,15 @@ async Task<int> RunHookAsync(MessagingService messagingService, string agentId, 
     return 0;
 }
 
-static string? ParseEventName(string input)
+static string? ReadHookInputString(string input, string propertyName)
 {
     if (string.IsNullOrWhiteSpace(input)) return null;
     try
     {
         using var document = JsonDocument.Parse(input);
-        return document.RootElement.TryGetProperty("hook_event_name", out var value) ? value.GetString() : null;
+        return document.RootElement.ValueKind == JsonValueKind.Object &&
+            document.RootElement.TryGetProperty(propertyName, out var value) &&
+            value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     }
     catch (JsonException) { return null; }
 }
