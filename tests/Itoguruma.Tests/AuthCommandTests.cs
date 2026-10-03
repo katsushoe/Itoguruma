@@ -1,5 +1,7 @@
 using Itoguruma.Cli;
 using Itoguruma.Core;
+using System.Security.Cryptography;
+using System.Text;
 using Xunit;
 
 namespace Itoguruma.Tests;
@@ -9,14 +11,18 @@ public sealed class AuthCommandTests
     [Fact]
     public void Status_WhenConfigured_DoesNotDisplayToken()
     {
-        var store = new FakeTokenStore { Token = "secret-value" };
+        var store = new FakeTokenStore { Credential = new("secret-value012345678901234567890", "0123456789abcdef0123456789abcdef") };
         var output = new StringWriter();
 
         int result = new AuthCommand(store, new StringReader(""), output, new StringWriter()).Run(["status"]);
 
         Assert.Equal(0, result);
         Assert.Contains("configured", output.ToString(), StringComparison.Ordinal);
-        Assert.DoesNotContain(store.Token, output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(store.Token!, output.ToString(), StringComparison.Ordinal);
+        var tokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(store.Token!)));
+        Assert.DoesNotContain(tokenHash, output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Authorization", output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(store.Credential!.GenerationId, output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -41,8 +47,9 @@ public sealed class AuthCommandTests
             .Run(["rotate"]);
 
         Assert.Equal(0, result);
-        Assert.NotNull(store.Token);
-        Assert.DoesNotContain(store.Token, output.ToString(), StringComparison.Ordinal);
+        Assert.NotNull(store.Credential);
+        Assert.DoesNotContain(store.Credential!.Token, output.ToString(), StringComparison.Ordinal);
+        Assert.Contains(store.Credential.GenerationId, output.ToString(), StringComparison.Ordinal);
         Assert.All(generated, value => Assert.Equal(0, value));
     }
 
@@ -54,7 +61,7 @@ public sealed class AuthCommandTests
         int result = new AuthCommand(store, new StringReader("no\n"), new StringWriter(), new StringWriter()).Run(["rotate"]);
 
         Assert.Equal(1, result);
-        Assert.Null(store.Token);
+        Assert.Null(store.Credential);
     }
 
     [Fact]
@@ -75,20 +82,23 @@ public sealed class AuthCommandTests
 
     private sealed class FakeTokenStore : IUserTokenStore
     {
-        public string? Token { get; set; }
+        public StoredAuthenticationToken? Credential { get; set; }
+        public string? Token => Credential?.Token;
 
         public Exception? SaveException { get; init; }
 
-        public bool IsConfigured => !string.IsNullOrWhiteSpace(Token);
+        public bool IsConfigured => Credential is not null;
 
-        public void Save(string token)
+        public StoredAuthenticationToken? Read() => Credential;
+
+        public void Save(StoredAuthenticationToken credential)
         {
             if (SaveException is not null)
             {
                 throw SaveException;
             }
 
-            Token = token;
+            Credential = credential;
         }
     }
 }

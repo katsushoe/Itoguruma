@@ -21,3 +21,5 @@ Keep the loopback Streamable HTTP server and bearer boundary. Store the bearer t
 ## Consequences
 
 Windows Credential Manager is part of the trust boundary. Install and token rotation update one per-user credential. The proxy never prints the token. The server remains loopback-only, validates origins, and performs fixed-time bearer comparison. Packaging, client registration, upgrade, tests, and user documentation must include the proxy. Codex and Claude compatibility tests must cover initialization, discovery, representative reads and writes, and errors through the proxy.
+
+Each credential stores a random generation ID alongside the bearer value in the credential metadata. The proxy forwards this ID in `X-Itoguruma-Token-Generation`; the server records expected and request IDs with a correlation ID for both successful and failed authentication. The diagnostic ID never participates in authorization. Logs and CLI output must not contain bearer values, authorization headers, or token hashes/fingerprints.

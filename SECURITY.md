@@ -10,6 +10,8 @@ Itoguruma is designed for a single Windows user and a loopback-only HTTP endpoin
 
 Every Streamable HTTP MCP request requires the bearer token stored as the per-user Windows credential `Itoguruma/McpBearerToken`. The local stdio proxy reads it and adds the header. Do not print, commit, log, or place the token in configuration or shared documents. Use `itoguruma auth status` to inspect presence and `itoguruma auth rotate` after suspected disclosure. The old token stops working immediately; restart the server and clients.
 
+Each credential also carries a random, non-secret generation ID in Windows Credential Manager metadata. The ID is diagnostic only: authentication is still decided solely by the bearer token. The proxy sends the ID in `X-Itoguruma-Token-Generation`; `itoguruma auth status` and MCP `get_auth_status` show it. Server authentication logs record expected/request generations, whether they match, a correlation ID, timestamp, and bounded client context. Missing or malformed diagnostic IDs never grant or deny access. Never log or display bearer values, authorization headers, or token hashes/fingerprints.
+
 ## Data and change requests
 
 Messages can contain sensitive text and remain in SQLite after acknowledgement. Protect the database with operating-system access controls. Change-request paths are restricted to existing Markdown files beneath the configured `inbox/<target_project>/` directory; validation failure never falls back to an ordinary message.

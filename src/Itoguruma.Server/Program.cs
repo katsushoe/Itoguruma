@@ -56,8 +56,8 @@ static async Task<int> RunServerAsync(string[] args)
         throw new InvalidOperationException("Itoguruma:SingleInstanceWaitSeconds must be between 0 and 60.");
     }
     var tokenStore = new WindowsCredentialTokenStore(GetOption(args, "--credential-target"));
-    var authenticationToken = tokenStore.Read();
-    if (string.IsNullOrWhiteSpace(authenticationToken))
+    var authenticationCredential = tokenStore.Read();
+    if (authenticationCredential is null)
     {
         throw new InvalidOperationException("Itoguruma:AuthenticationToken is required.");
     }
@@ -106,13 +106,22 @@ static async Task<int> RunServerAsync(string[] args)
             return;
         }
 
-        var authorization = context.Request.Headers.Authorization.ToString();
-        var suppliedToken = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-            ? authorization["Bearer ".Length..]
-            : string.Empty;
-        if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(suppliedToken),
-                Encoding.UTF8.GetBytes(authenticationToken)))
+        var correlationId = Guid.NewGuid().ToString("N");
+        context.Response.Headers["X-Itoguruma-Correlation-ID"] = correlationId;
+        var remote = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var agent = SanitizeLogValue(context.Request.Headers.UserAgent.ToString(), 96);
+        var generation = ReadRequestGeneration(context.Request.Headers);
+        var generationMatches = generation.Id is not null && string.Equals(
+            generation.Id, authenticationCredential.GenerationId, StringComparison.Ordinal);
+        var authHeader = context.Request.Headers.Authorization;
+        var (suppliedToken, authReason) = ParseBearer(authHeader);
+        var authorized = suppliedToken is not null && FixedTimeTokenEquals(suppliedToken, authenticationCredential.Token);
+        app.Logger.LogInformation(
+            "AuthResult timestamp={Timestamp} correlationId={CorrelationId} remote={Remote} userAgent={UserAgent} expectedGeneration={ExpectedGeneration} requestGeneration={RequestGeneration} generationMatches={GenerationMatches} generationReason={GenerationReason} authorized={Authorized} authReason={AuthReason}",
+            DateTimeOffset.UtcNow.ToString("O"), correlationId, remote, agent,
+            authenticationCredential.GenerationId, generation.Id ?? "unavailable", generationMatches,
+            generation.Reason, authorized, authReason);
+        if (!authorized)
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return;
@@ -124,6 +133,45 @@ static async Task<int> RunServerAsync(string[] args)
     app.MapMcp("/mcp");
     await app.RunAsync();
     return 0;
+}
+
+static (string? Token, string Reason) ParseBearer(Microsoft.Extensions.Primitives.StringValues values)
+{
+    if (values.Count != 1) return (null, values.Count == 0 ? "missing" : "multiple");
+    var value = values[0];
+    if (string.IsNullOrEmpty(value)) return (null, "missing");
+    if (value.Length > 263) return (null, "overlong");
+    if (!value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return (null, "scheme_invalid");
+    var token = value[7..];
+    if (token.Length is < 32 or > 256 || token.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '-' or '_')))
+        return (null, "format_invalid");
+    return (token, "validated");
+}
+
+static bool FixedTimeTokenEquals(string supplied, string expected)
+{
+    var suppliedBytes = Encoding.UTF8.GetBytes(supplied);
+    var expectedBytes = Encoding.UTF8.GetBytes(expected);
+    try { return suppliedBytes.Length == expectedBytes.Length && CryptographicOperations.FixedTimeEquals(suppliedBytes, expectedBytes); }
+    finally { CryptographicOperations.ZeroMemory(suppliedBytes); CryptographicOperations.ZeroMemory(expectedBytes); }
+}
+
+static (string? Id, string Reason) ReadRequestGeneration(Microsoft.AspNetCore.Http.IHeaderDictionary headers)
+{
+    const string name = "X-Itoguruma-Token-Generation";
+    var values = headers[name];
+    if (values.Count == 0) return (null, "missing");
+    if (values.Count != 1) return (null, "multiple");
+    var value = values[0];
+    if (value is null || value.Length > 32) return (null, "overlong");
+    if (value.Length != 32 || !Guid.TryParseExact(value, "N", out var id)) return (null, "format_invalid");
+    return (id.ToString("N"), "validated");
+}
+
+static string SanitizeLogValue(string value, int maximumLength)
+{
+    if (value.Length > maximumLength) value = value[..maximumLength];
+    return new string(value.Select(character => char.IsControl(character) ? '?' : character).ToArray());
 }
 
 static string? GetOption(string[] arguments, string name)

@@ -36,3 +36,16 @@ itoguruma ack --agent <inboxAgentId> --consumer-agent <consumerAgentId> --messag
 ## 確認
 
 受信Agentを登録してテストメッセージを送り、設定したライフサイクルイベントを発生させます。編集した設定ファイルはJSONパーサーで検証してください。MCP登録と障害確認は[MCP_SETUP.ja.md](MCP_SETUP.ja.md)を参照してください。
+
+## 障害時の確認と復旧
+
+- **出力なし・終了コード`0`:** lease可能なメッセージがない場合、または`--project-inbox`から有効なProjectを解決できない場合の正常動作です。イベントが`UserPromptSubmit`であること、Hook入力の`cwd`が対象Gitリポジトリ内であること、該当Project IDが有効であること（`itoguruma project list`）、Hookとサーバーが同じDBを使うことを確認します。
+- **非ゼロで終了:** Hookプロセスの終了コードとstderrをローカルで確認します。CLIは時刻付きの`[CommandFailure]`と例外詳細をstderrへ出し、終了コード`2`を返します。オプション、DBアクセス、Project解決のどこで失敗したかを調べます。資格情報や非公開メッセージ本文を共有ログへ貼り付けないでください。
+- **クライアント設定を確認:** 統合後の設定JSONを検証し、更新後も実行ファイルのパスが存在することを確認します。無関係なHook設定を保持し、設定変更後はClaude Codeを再起動します。
+- **Claude Codeを介さず再現:** クライアントと同じCLI、DBへHookイベントJSONを送ります。
+
+  ```powershell
+  '{"hook_event_name":"UserPromptSubmit","cwd":"C:\\work\\my-project"}' | itoguruma hook --project-inbox --consumer-agent claude-code
+  ```
+
+  メッセージがなければ出力なし・終了コード`0`です。メッセージが表示された場合は処理後、表示されたInbox Agent ID、Consumer Agent ID、`leaseId`を使って`messageId`をACKします。未ACKのメッセージはlease期限後に再取得できます。

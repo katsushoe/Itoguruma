@@ -304,10 +304,14 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
             string.Equals(hook_event_name, "Stop", StringComparison.Ordinal), messages));
     }
 
-    /// <summary>認証トークンの設定状態を返します。</summary>
+    /// <summary>認証トークンの設定状態と診断用世代IDを返します。</summary>
     [McpServerTool(Name = "get_auth_status", ReadOnly = true, UseStructuredContent = true)]
-    [Description("Return whether the user authentication token is configured without exposing its value.")]
-    public ToolData<AuthStatusResult> GetAuthStatus() => new(new(tokenService.IsConfigured));
+    [Description("Return whether the user authentication token is configured and its diagnostic generation ID, without exposing the token.")]
+    public ToolData<AuthStatusResult> GetAuthStatus()
+    {
+        var credential = tokenService.Current;
+        return new(new(credential is not null, credential?.GenerationId));
+    }
 
     /// <summary>認証トークンを確認文字列付きで更新します。</summary>
     [McpServerTool(Name = "rotate_auth_token", Destructive = true, UseStructuredContent = true)]
@@ -360,7 +364,7 @@ public sealed record UnregisterResult(bool Unregistered);
 public sealed record HookContextResult(string? Context, string? AgentId, bool ShouldStop, IReadOnlyList<Message> Messages);
 
 /// <summary>認証トークンの設定状態です。</summary>
-public sealed record AuthStatusResult(bool Configured);
+public sealed record AuthStatusResult(bool Configured, string? GenerationId);
 
 /// <summary>認証トークン更新結果です。</summary>
 public sealed record AuthRotationResult(bool Rotated, string NextAction);

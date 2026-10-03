@@ -33,9 +33,11 @@ public sealed class AuthCommand(
 
     private int Status()
     {
-        output.WriteLine(_tokenService.IsConfigured
+        var credential = _tokenService.Current;
+        output.WriteLine(credential is not null
             ? AppLocalization.Text("Authentication token: configured.", "認証トークン: 設定済みです。")
             : AppLocalization.Text("Authentication token: not configured.", "認証トークン: 未設定です。"));
+        if (credential is not null) output.WriteLine($"Generation ID: {credential.GenerationId}");
         return 0;
     }
 
@@ -59,7 +61,8 @@ public sealed class AuthCommand(
             error.WriteLine(AppLocalization.Text($"Token rotation failed: {ex.Message}", $"トークンの更新に失敗しました: {ex.Message}"));
             return 2;
         }
-        output.WriteLine(AppLocalization.Text("Authentication token rotated. The token value is not displayed.", "認証トークンを更新しました。トークン値は表示しません。"));
+        output.WriteLine(AppLocalization.Text($"Authentication token rotated. Generation ID: {_tokenService.Current?.GenerationId}. The token value is not displayed.",
+            $"認証トークンを更新しました。世代ID: {_tokenService.Current?.GenerationId}。トークン値は表示しません。"));
         output.WriteLine("Next: restart the ItogurumaServer scheduled task, Codex, Claude Code, and Hataori.");
         return 0;
     }
