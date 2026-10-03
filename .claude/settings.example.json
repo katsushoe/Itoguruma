@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:\\Itoguruma\\bin\\itoguruma\\itoguruma.exe\" hook --agent claude-main --consumer-agent claude-main --db \"C:\\Itoguruma\\data\\messages.db\"",
+            "command": "\"C:\\Itoguruma\\bin\\itoguruma\\itoguruma.exe\" hook --project-inbox --consumer-agent claude-code --db \"C:\\Itoguruma\\data\\messages.db\"",
             "timeout": 15
           }
         ]

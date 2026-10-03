@@ -453,6 +453,66 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task AgentHook_WhenProjectInboxIsSelected_LeasesMessagesOfWorkspaceRepository()
+    {
+        var databasePath = Path.Combine(_directory, "project-hook.db");
+        var store = new SqliteMessageStore(databasePath);
+        var service = new MessagingService(store);
+        await service.InitializeAsync();
+        await service.RegisterAgentAsync("sender", "test");
+        await store.RegisterProjectInboxAsync("HookProj", "Hook Proj");
+        await service.SendMessageAsync(new("sender", ["hookproj"], "project message", "hook-project", "codex"));
+        var repository = Directory.CreateDirectory(Path.Combine(_directory, "HookProj"));
+        Directory.CreateDirectory(Path.Combine(repository.FullName, ".git"));
+        var workingDirectory = Directory.CreateDirectory(Path.Combine(repository.FullName, "src", "nested")).FullName;
+
+        var prompt = await RunAsync("itoguruma",
+            ["hook", "--project-inbox", "--consumer-agent", "claude-code"], databasePath,
+            JsonSerializer.Serialize(new { hook_event_name = "UserPromptSubmit", cwd = workingDirectory }));
+
+        Assert.Equal(0, prompt.ExitCode);
+        Assert.Contains("project message", prompt.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("agent_id: hookproj", prompt.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("consumer_agent_id: claude-code", prompt.StandardOutput, StringComparison.Ordinal);
+        var output = prompt.StandardOutput;
+        using var messages = JsonDocument.Parse(output[output.IndexOf('[')..]);
+        var leased = Assert.Single(messages.RootElement.EnumerateArray());
+        Assert.True(await service.AckMessageAsync("hookproj", "claude-code",
+            leased.GetProperty("messageId").GetString()!, leased.GetProperty("leaseId").GetString()!));
+    }
+
+    [Fact]
+    public async Task AgentHook_WhenWorkspaceHasNoRegisteredProject_PrintsNothing()
+    {
+        var databasePath = Path.Combine(_directory, "project-hook-none.db");
+        var service = new MessagingService(new SqliteMessageStore(databasePath));
+        await service.InitializeAsync();
+        var repository = Directory.CreateDirectory(Path.Combine(_directory, "UnregisteredProj"));
+        Directory.CreateDirectory(Path.Combine(repository.FullName, ".git"));
+
+        var result = await RunAsync("itoguruma",
+            ["hook", "--project-inbox", "--consumer-agent", "claude-code"], databasePath,
+            JsonSerializer.Serialize(new { hook_event_name = "UserPromptSubmit", cwd = repository.FullName }));
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.StandardOutput.Trim());
+    }
+
+    [Fact]
+    public async Task AgentHook_WhenAgentAndProjectInboxAreBothSpecified_Fails()
+    {
+        var databasePath = Path.Combine(_directory, "project-hook-conflict.db");
+        var service = new MessagingService(new SqliteMessageStore(databasePath));
+        await service.InitializeAsync();
+
+        var result = await RunAsync("itoguruma",
+            ["hook", "--project-inbox", "--agent", "recipient", "--consumer-agent", "claude-code"], databasePath,
+            "{\"hook_event_name\":\"UserPromptSubmit\"}");
+
+        Assert.Equal(2, result.ExitCode);
+    }
+
+    [Fact]
     public async Task AgentCli_WhenProcessesSendConcurrently_PersistsEveryMessage()
     {
         const int messageCount = 12;
@@ -831,11 +891,11 @@ public sealed class ProcessIntegrationTests : IDisposable
         using var claudeJson = JsonDocument.Parse(claudeExample);
 
         Assert.Contains(
-            "New-HookSettings \"claude-main\" @(\"UserPromptSubmit\")",
+            "New-HookSettings \"--project-inbox\" \"claude-code\" @(\"UserPromptSubmit\")",
             installer,
             StringComparison.Ordinal);
         Assert.Contains(
-            "New-HookSettings \"codex-main\" @(\"SessionStart\", \"UserPromptSubmit\", \"Stop\")",
+            "New-HookSettings \"--agent codex-main\" \"codex-main\" @(\"SessionStart\", \"UserPromptSubmit\", \"Stop\")",
             installer,
             StringComparison.Ordinal);
 

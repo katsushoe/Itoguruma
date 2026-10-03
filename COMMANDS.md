@@ -17,7 +17,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `itoguruma ack` | `--agent`, `--message` | `--db` | Acknowledges a leased delivery. |
 | `itoguruma history` | `--thread` | `--limit`, `--offset`, `--db` | Returns the conversation history oldest first. |
 | `itoguruma inspect-change-request` | `--payload-json` | `--db` | Revalidates a CR file and reports state differences. |
-| `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Converts inbox messages to lifecycle-hook output. |
+| `itoguruma hook` | Exactly one of `--agent` or `--project-inbox`, and `--consumer-agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Converts inbox messages to lifecycle-hook output. `--project-inbox` uses the inbox of the registered project for the Git repository of the input `cwd` (see [HOOKS.md](HOOKS.md)). |
 | `itoguruma auth status` | None | None | Reports token presence without revealing it. |
 | `itoguruma auth rotate` | Confirmation | None | Replaces the user token with 32 random bytes. |
 | `itoguruma project add <project-id>` | `--inbox-agent` and interactive confirmation | `--display-name`, `--db` | Adds an enabled known project. |
@@ -41,7 +41,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `ack_message` | `agent_id`, `consumer_agent_id`, `message_id`, `lease_id` | Acknowledges only the delivery leased by the matching consumer and lease ID. |
 | `get_conversation_history` | `thread_id` | Returns the thread oldest first, including acknowledged messages; an unknown thread returns an empty array. |
 | `inspect_change_request` | `payload_json` | Revalidates the CR file and reports payload/file state differences. |
-| `get_hook_context` | `agent_id`, `consumer_agent_id` | Leases messages for the consumer and returns CLI-hook-compatible context and stop state. |
+| `get_hook_context` | `consumer_agent_id` and exactly one of `agent_id` or `working_directory` | Leases messages for the consumer and returns CLI-hook-compatible context, the resolved `agent_id`, and stop state. `working_directory` selects the inbox by the same rule as CLI `--project-inbox`. |
 | `get_auth_status` | None | Reports token presence without revealing it. |
 | `rotate_auth_token` | `confirmation=ROTATE` | Replaces the user token without returning its value; server and clients must be restarted. |
 

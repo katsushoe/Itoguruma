@@ -279,18 +279,28 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
 
     /// <summary>CLI hookと同じ形式の受信コンテキストを返します。</summary>
     [McpServerTool(Name = "get_hook_context", UseStructuredContent = true)]
-    [Description("Lease messages and format the same context produced by the CLI hook command.")]
-    public async Task<ToolData<HookContextResult>> GetHookContext(string agent_id, string consumer_agent_id,
+    [Description("Lease messages and format the same context produced by the CLI hook command. " +
+        "Pass exactly one of agent_id or working_directory. With working_directory, the inbox is the enabled " +
+        "registered project whose ID is the containing Git repository name in invariant lowercase; " +
+        "when no such project exists, no message is leased and agent_id in the result is null.")]
+    public async Task<ToolData<HookContextResult>> GetHookContext(string consumer_agent_id,
+        string? agent_id = null, string? working_directory = null,
         string? hook_event_name = null, int limit = 50, int lease_seconds = 300,
         string? thread_id = null, string? message_type = null,
         CancellationToken cancellationToken = default)
     {
-        var messages = await service.GetMessagesAsync(agent_id, limit, TimeSpan.FromSeconds(lease_seconds),
+        if (string.IsNullOrWhiteSpace(agent_id) == string.IsNullOrWhiteSpace(working_directory))
+            throw new ArgumentException("Specify exactly one of agent_id or working_directory.");
+        var inboxAgentId = agent_id;
+        if (inboxAgentId is null)
+        {
+            inboxAgentId = (await service.ResolveWorkspaceProjectAsync(working_directory!, cancellationToken))?.InboxAgentId;
+            if (inboxAgentId is null) return new(new(null, null, false, []));
+        }
+        var messages = await service.GetMessagesAsync(inboxAgentId, limit, TimeSpan.FromSeconds(lease_seconds),
             thread_id, message_type, consumer_agent_id, cancellationToken);
-        var context = messages.Count == 0 ? null :
-            AppLocalization.Text("Itoguruma inbox messages:\n", "Itoguruma受信メッセージ:\n") +
-            JsonSerializer.Serialize(messages, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
-        return new(new(context, messages.Count > 0 &&
+        var context = HookContextFormatter.Format(inboxAgentId, consumer_agent_id, messages);
+        return new(new(context, inboxAgentId, messages.Count > 0 &&
             string.Equals(hook_event_name, "Stop", StringComparison.Ordinal), messages));
     }
 
@@ -347,7 +357,7 @@ public sealed record AcknowledgementResult(bool Acked);
 public sealed record UnregisterResult(bool Unregistered);
 
 /// <summary>CLI hook互換のコンテキストです。</summary>
-public sealed record HookContextResult(string? Context, bool ShouldStop, IReadOnlyList<Message> Messages);
+public sealed record HookContextResult(string? Context, string? AgentId, bool ShouldStop, IReadOnlyList<Message> Messages);
 
 /// <summary>認証トークンの設定状態です。</summary>
 public sealed record AuthStatusResult(bool Configured);

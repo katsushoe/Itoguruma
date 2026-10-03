@@ -83,6 +83,16 @@ public sealed class MessagingService(IMessageStore store, ChangeRequestValidator
     public Task<Project?> GetProjectAsync(string projectId, CancellationToken cancellationToken = default) =>
         store.GetProjectAsync(projectId, cancellationToken);
 
+    /// <summary>作業ディレクトリのGitリポジトリに対応する有効な登録Projectを返します。該当しない場合はnullです。</summary>
+    public async Task<Project?> ResolveWorkspaceProjectAsync(string workingDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        var projectId = ProjectWorkspace.FindProjectId(workingDirectory);
+        if (projectId is null) return null;
+        var project = await store.GetProjectAsync(projectId, cancellationToken);
+        return project is { Enabled: true } ? project : null;
+    }
+
     private static void ValidateJson(string? value, string name)
     {
         if (value is null) return;

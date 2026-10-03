@@ -300,12 +300,13 @@ try {
         [Environment]::SetEnvironmentVariable($variableName, $null, "User")
     }
     function New-HookSettings {
-        param([string]$AgentId, [string[]]$Events)
+        param([string]$InboxArguments, [string]$ConsumerAgentId, [string[]]$Events)
 
-        $hookCommand = '"' + $cliPath + '" hook --agent ' + $AgentId + ' --consumer-agent ' + $AgentId + ' --db "' + $databasePath + '"'
+        $hookArguments = $InboxArguments + ' --consumer-agent ' + $ConsumerAgentId
+        $hookCommand = '"' + $cliPath + '" hook ' + $hookArguments + ' --db "' + $databasePath + '"'
         $cliPowerShellPath = $cliPath.Replace("'", "''")
         $databasePowerShellPath = $databasePath.Replace("'", "''")
-        $hookCommandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ''' + $cliPowerShellPath + ''' hook --agent ' + $AgentId + ' --consumer-agent ' + $AgentId + ' --db ''' + $databasePowerShellPath + '''"'
+        $hookCommandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ''' + $cliPowerShellPath + ''' hook ' + $hookArguments + ' --db ''' + $databasePowerShellPath + '''"'
         $hookEntry = @{
             hooks = @(@{
                 type = "command"
@@ -320,8 +321,8 @@ try {
     }
     $examplesRoot = Join-Path $destinationRoot "examples"
     New-Item -ItemType Directory -Force -Path $examplesRoot | Out-Null
-    New-HookSettings "claude-main" @("UserPromptSubmit") | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "claude-settings.json") -Encoding utf8
-    New-HookSettings "codex-main" @("SessionStart", "UserPromptSubmit", "Stop") | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "codex-hooks.json") -Encoding utf8
+    New-HookSettings "--project-inbox" "claude-code" @("UserPromptSubmit") | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "claude-settings.json") -Encoding utf8
+    New-HookSettings "--agent codex-main" "codex-main" @("SessionStart", "UserPromptSubmit", "Stop") | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "codex-hooks.json") -Encoding utf8
     if (!$SkipCodex) {
         $codexCandidates = @(Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin") `
             -Filter "codex.exe" -File -Recurse -ErrorAction SilentlyContinue |

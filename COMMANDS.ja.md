@@ -17,7 +17,7 @@
 | `itoguruma ack` | `--agent`, `--message` | `--db` | lease済みメッセージをACKします。 |
 | `itoguruma history` | `--thread` | `--limit`, `--offset`, `--db` | 指定Threadのメッセージ履歴を作成日時の昇順で返します。 |
 | `itoguruma inspect-change-request` | `--payload-json` | `--db` | CRファイルを再検証し、記録された状態との差異を返します。 |
-| `itoguruma hook` | `--agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Claude Code／Codex Hook入力を読み、InboxをHook出力へ追加します。 |
+| `itoguruma hook` | `--agent`または`--project-inbox`のどちらか一方、`--consumer-agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Claude Code／Codex Hook入力を読み、InboxをHook出力へ追加します。`--project-inbox`は入力`cwd`のGitリポジトリに対応する登録Projectの受信箱を使います（[HOOKS.ja.md](HOOKS.ja.md)）。 |
 | `itoguruma auth status` | なし | なし | 値を表示せず、ユーザー認証トークンの設定有無を表示します。 |
 | `itoguruma auth rotate` | なし | なし | 明示確認後に32バイトの暗号学的乱数でユーザー認証トークンをローテーションします。 |
 | `itoguruma project add <project-id>` | `--inbox-agent`、対話確認 | `--display-name`、`--db` | 有効な既知プロジェクトを追加します。 |
@@ -62,7 +62,7 @@ itoguruma auth rotate
 | `ack_message` | `agent_id`, `consumer_agent_id`, `message_id`, `lease_id` | なし | 取得Agentとlease IDが一致する配送だけをACKします。 |
 | `get_conversation_history` | `thread_id` | `limit`, `offset` | 指定Threadの既読・過去分を含む全メッセージ履歴を、作成日時の昇順で返します。該当Threadが存在しない場合は空配列を返します。 |
 | `inspect_change_request` | `payload_json` | なし | CRファイルを再検証し、payloadに記録された状態との不一致を返します。 |
-| `get_hook_context` | `agent_id`, `consumer_agent_id` | `hook_event_name`, `limit`, `lease_seconds`, `thread_id`, `message_type` | 取得Agent向けにメッセージをleaseし、CLI Hook互換のコンテキストと停止状態を返します。 |
+| `get_hook_context` | `consumer_agent_id`、`agent_id`または`working_directory`のどちらか一方 | `hook_event_name`, `limit`, `lease_seconds`, `thread_id`, `message_type` | 取得Agent向けにメッセージをleaseし、CLI Hook互換のコンテキスト、解決した`agent_id`、停止状態を返します。`working_directory`はCLIの`--project-inbox`と同じ規則で受信箱を選びます。 |
 | `get_auth_status` | なし | なし | 値を表示せず、ユーザー認証トークンの設定有無を返します。 |
 | `rotate_auth_token` | `confirmation=ROTATE` | なし | トークン値を返さずに更新します。実行後はサーバーとクライアントの再起動が必要です。 |
 
