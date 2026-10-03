@@ -28,7 +28,7 @@ claude mcp add --transport stdio --scope user itoguruma -- "C:\Itoguruma\bin\mcp
 
 ## トラブルシューティング
 
-- 認証失敗: 値を表示せずトークンの有無を確認し、ローテーション後はクライアントを再起動します。
+- 認証失敗: 値を表示せずトークンの有無を確認し、ローテーション後はクライアントを再起動します。古いクライアントは`itoguruma auth status`の世代IDとサーバーログの`AuthResult`（`expectedGeneration`、`requestGeneration`、`generationMatches`、`correlationId`）を照合します。世代IDは診断専用です。
 - Inboxが空: 送受信側のDBが同じで、宛先Agentが登録済みか確認します。
 - 再配送: lease期限前に処理済みメッセージをACKします。
-- Hookエラー: 統合後のJSONをJSONパーサーで検証します。
+- Hookエラー: 統合後のJSON、実行ファイルパス、登録済みProject Inboxを確認し、CLIから再現します。手順は[HOOKS.ja.md](HOOKS.ja.md#障害時の確認と復旧)を参照してください。

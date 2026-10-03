@@ -11,10 +11,12 @@ try
 {
     var endpoint = GetOption(args, "--url")
         ?? throw new ArgumentException("Missing required option: --url.");
-    var token = new WindowsCredentialTokenStore(GetOption(args, "--credential-target")).Read()
+    var credential = new WindowsCredentialTokenStore(GetOption(args, "--credential-target")).Read()
         ?? throw new InvalidOperationException("The Itoguruma credential is not configured.");
     using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
-    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential.Token);
+    client.DefaultRequestHeaders.TryAddWithoutValidation("X-Itoguruma-Token-Generation", credential.GenerationId);
+    await Console.Error.WriteLineAsync($"Itoguruma MCP proxy credential generation: {credential.GenerationId}.");
     client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
@@ -30,8 +32,11 @@ try
             if (response.StatusCode == System.Net.HttpStatusCode.Accepted) continue;
             if (!response.IsSuccessStatusCode)
             {
+                var correlationId = response.Headers.TryGetValues("X-Itoguruma-Correlation-ID", out var values)
+                    ? values.FirstOrDefault(value => Guid.TryParseExact(value, "N", out _)) : null;
                 await WriteErrorResponseAsync(requestJson,
-                    $"Itoguruma server returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).");
+                    $"Itoguruma server returned HTTP {(int)response.StatusCode} ({response.StatusCode})." +
+                    (correlationId is null ? string.Empty : $" Correlation ID: {correlationId}."));
                 continue;
             }
             if (response.Content.Headers.ContentType?.MediaType == "application/json")

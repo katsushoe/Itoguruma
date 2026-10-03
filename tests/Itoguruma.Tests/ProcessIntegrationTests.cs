@@ -400,6 +400,91 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpServer_WhenOldTokenAndGenerationArePresented_LogsMismatchWithoutSecret()
+    {
+        await using var server = await StartMcpServerAsync(Path.Combine(_directory, "mcp-stale-token.db"));
+        const string staleToken = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        const string staleGeneration = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        using var client = new HttpClient { BaseAddress = new Uri(server.ServerUrl) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", staleToken);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Itoguruma-Token-Generation", staleGeneration);
+        using var content = new StringContent(ToolRequest(1, "get_version", new { }));
+
+        using var response = await client.PostAsync("/mcp", content);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.True(response.Headers.TryGetValues("X-Itoguruma-Correlation-ID", out var correlationValues));
+        var correlationId = Assert.Single(correlationValues!);
+        Assert.Matches("^[0-9a-f]{32}$", correlationId);
+        var logPath = Directory.GetFiles(Path.Combine(_directory, "logs"), "itoguruma-server-*.log").Single();
+        var log = await ReadSharedLogAsync(logPath);
+        Assert.Contains("AuthResult", log, StringComparison.Ordinal);
+        Assert.Contains(correlationId, log, StringComparison.Ordinal);
+        Assert.Contains(server.GenerationId, log, StringComparison.Ordinal);
+        Assert.Contains(staleGeneration, log, StringComparison.Ordinal);
+        Assert.Contains("generationMatches=False", log, StringComparison.Ordinal);
+        Assert.DoesNotContain(staleToken, log, StringComparison.Ordinal);
+        Assert.DoesNotContain(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(staleToken))), log, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Authorization", log, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task McpServer_AuthStatus_ReturnsGenerationWithoutToken()
+    {
+        await using var server = await StartMcpServerAsync(Path.Combine(_directory, "mcp-auth-status.db"));
+        using var client = new HttpClient { BaseAddress = new Uri(server.ServerUrl) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", server.AuthenticationToken);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Itoguruma-Token-Generation", server.GenerationId);
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        client.DefaultRequestHeaders.TryAddWithoutValidation("MCP-Protocol-Version", "2025-11-25");
+        using var content = new StringContent(ToolRequest(1, "get_auth_status", new { }), Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/mcp", content);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = ParseMcpResponse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(server.GenerationId, StructuredData(document).GetProperty("generationId").GetString());
+        Assert.DoesNotContain(server.AuthenticationToken, document.RootElement.GetRawText(), StringComparison.Ordinal);
+        var log = await ReadSharedLogAsync(Directory.GetFiles(Path.Combine(_directory, "logs"), "itoguruma-server-*.log").Single());
+        Assert.Contains("generationMatches=True", log, StringComparison.Ordinal);
+        Assert.DoesNotContain(server.AuthenticationToken, log, StringComparison.Ordinal);
+        Assert.DoesNotContain(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(server.AuthenticationToken))), log, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task McpServer_WhenAuthInputsAreOverlong_RejectsWithoutLoggingInput()
+    {
+        await using var server = await StartMcpServerAsync(Path.Combine(_directory, "mcp-overlong-auth.db"));
+        var overlongGeneration = new string('a', 33);
+        using var client = new HttpClient { BaseAddress = new Uri(server.ServerUrl) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", server.AuthenticationToken);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Itoguruma-Token-Generation", overlongGeneration);
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        client.DefaultRequestHeaders.TryAddWithoutValidation("MCP-Protocol-Version", "2025-11-25");
+        using var content = new StringContent(ToolRequest(1, "get_version", new { }), Encoding.UTF8, "application/json");
+
+        using var allowedResponse = await client.PostAsync("/mcp", content);
+        Assert.Equal(HttpStatusCode.OK, allowedResponse.StatusCode);
+
+        var overlongToken = new string('A', 257);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", overlongToken);
+        client.DefaultRequestHeaders.Remove("X-Itoguruma-Token-Generation");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Itoguruma-Token-Generation", server.GenerationId);
+        using var invalidTokenContent = new StringContent(ToolRequest(2, "get_version", new { }), Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/mcp", invalidTokenContent);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var logPath = Directory.GetFiles(Path.Combine(_directory, "logs"), "itoguruma-server-*.log").Single();
+        var log = await ReadSharedLogAsync(logPath);
+        Assert.Contains("authReason=overlong", log, StringComparison.Ordinal);
+        Assert.Contains("generationReason=overlong", log, StringComparison.Ordinal);
+        Assert.Contains("authorized=True", log, StringComparison.Ordinal);
+        Assert.DoesNotContain(overlongToken, log, StringComparison.Ordinal);
+        Assert.DoesNotContain(overlongGeneration, log, StringComparison.Ordinal);
+        Assert.DoesNotContain(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(overlongToken))), log, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Authorization", log, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task McpServer_WhenStarted_WritesLogToConfiguredDirectory()
     {
         var databasePath = Path.Combine(_directory, "mcp-log.db");
@@ -656,7 +741,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         var token = Guid.NewGuid().ToString("N");
         var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
         var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
-        credentialStore.Save(token);
+        var generationId = Guid.NewGuid().ToString("N");
+        credentialStore.Save(new StoredAuthenticationToken(token, generationId));
         using var listener = new HttpListener();
         listener.Prefixes.Add(endpoint);
         listener.Start();
@@ -664,6 +750,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         {
             var context = await listener.GetContextAsync();
             Assert.Equal($"Bearer {token}", context.Request.Headers["Authorization"]);
+            Assert.Equal(generationId, context.Request.Headers["X-Itoguruma-Token-Generation"]);
             context.Response.ContentType = "text/event-stream";
             await using var writer = new StreamWriter(context.Response.OutputStream);
             await writer.WriteAsync("data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n");
@@ -678,6 +765,8 @@ public sealed class ProcessIntegrationTests : IDisposable
             await responseTask;
             Assert.Equal(0, result.ExitCode);
             Assert.Contains("\"result\":{}", result.StandardOutput, StringComparison.Ordinal);
+            Assert.Contains(generationId, result.StandardError, StringComparison.Ordinal);
+            Assert.DoesNotContain(token, result.StandardOutput + result.StandardError, StringComparison.Ordinal);
         }
         finally
         {
@@ -693,7 +782,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var token = Guid.NewGuid().ToString("N");
         var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
         var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
-        credentialStore.Save(token);
+        credentialStore.Save(new StoredAuthenticationToken(token, Guid.NewGuid().ToString("N")));
         using var listener = new HttpListener();
         listener.Prefixes.Add(endpoint);
         listener.Start();
@@ -740,7 +829,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var token = Guid.NewGuid().ToString("N");
         var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
         var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
-        credentialStore.Save(token);
+        credentialStore.Save(new StoredAuthenticationToken(token, Guid.NewGuid().ToString("N")));
         using var listener = new HttpListener();
         listener.Prefixes.Add(endpoint);
         listener.Start();
@@ -784,7 +873,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var token = Guid.NewGuid().ToString("N");
         var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
         var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
-        credentialStore.Save(token);
+        credentialStore.Save(new StoredAuthenticationToken(token, Guid.NewGuid().ToString("N")));
         using var listener = new HttpListener();
         listener.Prefixes.Add(endpoint);
         listener.Start();
@@ -828,7 +917,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         var token = Guid.NewGuid().ToString("N");
         var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
         var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
-        credentialStore.Save(token);
+        credentialStore.Save(new StoredAuthenticationToken(token, Guid.NewGuid().ToString("N")));
         using var listener = new HttpListener();
         listener.Prefixes.Add(endpoint);
         listener.Start();
@@ -1010,6 +1099,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         await using var server = await StartMcpServerAsync(databasePath);
         using var client = new HttpClient { BaseAddress = new Uri(server.ServerUrl) };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", server.AuthenticationToken);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Itoguruma-Token-Generation", server.GenerationId);
         var output = new List<JsonDocument>();
         foreach (var request in requests)
         {
@@ -1031,14 +1121,15 @@ public sealed class ProcessIntegrationTests : IDisposable
         Directory.CreateDirectory(_directory);
         var serverUrl = $"http://127.0.0.1:{GetAvailablePort()}";
         var authenticationToken = Guid.NewGuid().ToString("N");
+        var generationId = Guid.NewGuid().ToString("N");
         var credentialTarget = $"Itoguruma/Tests/{Guid.NewGuid():N}";
         var credentialStore = new WindowsCredentialTokenStore(credentialTarget);
-        credentialStore.Save(authenticationToken);
+        credentialStore.Save(new StoredAuthenticationToken(authenticationToken, generationId));
         var startInfo = CreateMcpServerStartInfo(databasePath, serverUrl, credentialTarget);
         var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
         var standardOutput = process.StandardOutput.ReadToEndAsync();
         var standardError = process.StandardError.ReadToEndAsync();
-        var server = new RunningMcpServer(process, standardOutput, standardError, serverUrl, authenticationToken, credentialTarget, credentialStore);
+        var server = new RunningMcpServer(process, standardOutput, standardError, serverUrl, authenticationToken, generationId, credentialTarget, credentialStore);
         try
         {
             using var client = new HttpClient { BaseAddress = new Uri(serverUrl) };
@@ -1093,6 +1184,13 @@ public sealed class ProcessIntegrationTests : IDisposable
             .FirstOrDefault(line => line.StartsWith(dataPrefix, StringComparison.Ordinal))?[dataPrefix.Length..]
             ?? responseBody;
         return JsonDocument.Parse(json);
+    }
+
+    private static async Task<string> ReadSharedLogAsync(string path)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return await reader.ReadToEndAsync();
     }
 
     private static int GetAvailablePort()
@@ -1170,11 +1268,13 @@ public sealed class ProcessIntegrationTests : IDisposable
         Task<string> standardError,
         string serverUrl,
         string authenticationToken,
+        string generationId,
         string credentialTarget,
         WindowsCredentialTokenStore credentialStore) : IAsyncDisposable
     {
         public string ServerUrl { get; } = serverUrl;
         public string AuthenticationToken { get; } = authenticationToken;
+        public string GenerationId { get; } = generationId;
         public string CredentialTarget { get; } = credentialTarget;
 
         public async ValueTask DisposeAsync()

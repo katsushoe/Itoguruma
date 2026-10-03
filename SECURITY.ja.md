@@ -10,6 +10,8 @@ Itogurumaは、単一Windowsユーザーとloopback限定HTTP endpointでの利�
 
 すべてのStreamable HTTP MCPリクエストには、ユーザー単位のWindows資格情報`Itoguruma/McpBearerToken`に保存されたBearerトークンが必要です。ローカルstdioプロキシがこれを読み取り、ヘッダーを付加します。トークンを表示、コミット、ログ記録、設定ファイルや共有文書への記載の対象にしないでください。設定の有無は`itoguruma auth status`で確認し、漏えいが疑われる場合は`itoguruma auth rotate`を実行します。旧トークンは直ちに無効になるため、サーバーとクライアントを再起動してください。
 
+各資格情報には、Windows資格情報マネージャーのメタデータに秘密ではないランダムな世代IDも保存します。世代IDは診断専用であり、認証判定は引き続きBearerトークンだけで行います。プロキシは`X-Itoguruma-Token-Generation`でIDを送り、`itoguruma auth status`とMCPの`get_auth_status`で確認できます。サーバーの認証ログには期待世代・要求世代・一致状態、Correlation ID、時刻、長さを制限したクライアント情報を記録します。診断IDの欠落や不正はアクセス許可・拒否に影響しません。Bearer値、Authorizationヘッダー、トークンのハッシュやフィンガープリントを記録・表示してはいけません。
+
 ## データと変更依頼
 
 メッセージには機密情報が含まれる場合があり、ACK後もSQLiteに残ります。OSのアクセス制御でデータベースを保護してください。変更依頼のパスは、設定済み共有CRルートの`inbox/<target_project>/`配下にある既存Markdownファイルだけを許可します。検証失敗時に通常メッセージへ自動変換しません。

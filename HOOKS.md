@@ -36,3 +36,16 @@ itoguruma ack --agent <inboxAgentId> --consumer-agent <consumerAgentId> --messag
 ## Verification
 
 Register the receiving agent, send a test message, and trigger a configured lifecycle event. Validate edited configuration files with a JSON parser. For MCP registration and troubleshooting, see [MCP_SETUP.md](MCP_SETUP.md).
+
+## Troubleshooting
+
+- **No context and exit code `0`:** This is expected when there are no leasable messages or `--project-inbox` cannot resolve an enabled project. Confirm the event is `UserPromptSubmit`, the hook input `cwd` points inside the intended Git repository, that repository's Project ID is enabled (`itoguruma project list`), and the hook and server use the same database.
+- **Hook command exits nonzero:** Capture the hook process exit code and stderr locally. The CLI writes a timestamped `[CommandFailure]` entry to stderr and returns `2`; use its exception details to distinguish invalid options, database access, and project-resolution failures. Do not paste credentials or private message bodies into shared logs.
+- **Check the client configuration:** Validate the merged settings JSON, confirm the configured executable path still exists after an upgrade, and preserve unrelated hook entries. Restart Claude Code after changing its settings.
+- **Reproduce outside Claude Code:** Send a JSON hook event to the same CLI and database configured for the client:
+
+  ```powershell
+  '{"hook_event_name":"UserPromptSubmit","cwd":"C:\\work\\my-project"}' | itoguruma hook --project-inbox --consumer-agent claude-code
+  ```
+
+  Output is empty with exit code `0` when there is no message. When a message appears, process it and acknowledge its `messageId` with the displayed inbox Agent ID, consumer Agent ID, and `leaseId`; unacknowledged messages become available again after the lease expires.

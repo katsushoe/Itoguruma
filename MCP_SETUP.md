@@ -28,7 +28,7 @@ Register each client with `register_agent`, send a message, lease it with `get_m
 
 ## Troubleshooting
 
-- Authentication failure: confirm token presence without printing its value, then restart clients after rotation.
+- Authentication failure: confirm token presence without printing its value, then restart clients after rotation. To diagnose stale clients, compare `itoguruma auth status` with server `AuthResult` fields (`expectedGeneration`, `requestGeneration`, `generationMatches`, and `correlationId`). Generation IDs are diagnostic only.
 - Empty inbox: verify that sender and recipient use the same database and that the recipient is registered.
 - Repeated delivery: acknowledge processed messages before the lease expires.
-- Hook errors: validate merged JSON with a JSON parser.
+- Hook errors: validate merged JSON, check the configured executable path and registered project inbox, then reproduce with the CLI. See [HOOKS.md](HOOKS.md#troubleshooting).

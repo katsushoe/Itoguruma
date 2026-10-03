@@ -18,7 +18,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `itoguruma history` | `--thread` | `--limit`, `--offset`, `--db` | Returns the conversation history oldest first. |
 | `itoguruma inspect-change-request` | `--payload-json` | `--db` | Revalidates a CR file and reports state differences. |
 | `itoguruma hook` | Exactly one of `--agent` or `--project-inbox`, and `--consumer-agent` | `--limit`, `--lease-seconds`, `--thread`, `--message-type`, `--db` | Converts inbox messages to lifecycle-hook output. `--project-inbox` uses the inbox of the registered project for the Git repository of the input `cwd` (see [HOOKS.md](HOOKS.md)). |
-| `itoguruma auth status` | None | None | Reports token presence without revealing it. |
+| `itoguruma auth status` | None | None | Reports credential presence and its diagnostic generation ID without revealing the token. |
 | `itoguruma auth rotate` | Confirmation | None | Replaces the user token with 32 random bytes. |
 | `itoguruma project add <project-id>` | `--inbox-agent` and interactive confirmation | `--display-name`, `--db` | Adds an enabled known project. |
 | `itoguruma project update <project-id>` | Interactive confirmation | `--inbox-agent`, `--display-name`, `--db` | Updates a known project. |
@@ -27,6 +27,8 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `itoguruma version` | None | None | Prints the product version in `x.x.x` or `x.x.x.x` format. |
 
 ## MCP tools
+
+`get_auth_status` returns whether the user credential is configured and its non-secret diagnostic generation ID. The generation ID is not used for authentication.
 
 | Tool | Required input | State-dependent result |
 | :--- | :--- | :--- |
@@ -42,7 +44,7 @@ This document is the canonical command and MCP tool reference. `--db` resolves f
 | `get_conversation_history` | `thread_id` | Returns the thread oldest first, including acknowledged messages; an unknown thread returns an empty array. |
 | `inspect_change_request` | `payload_json` | Revalidates the CR file and reports payload/file state differences. |
 | `get_hook_context` | `consumer_agent_id` and exactly one of `agent_id` or `working_directory` | Leases messages for the consumer and returns CLI-hook-compatible context, the resolved `agent_id`, and stop state. `working_directory` selects the inbox by the same rule as CLI `--project-inbox`. |
-| `get_auth_status` | None | Reports token presence without revealing it. |
+| `get_auth_status` | None | Reports credential presence and its diagnostic generation ID without revealing the token. |
 | `rotate_auth_token` | `confirmation=ROTATE` | Replaces the user token without returning its value; server and clients must be restarted. |
 
 `get_version` returns the running server name and its product version in `x.x.x` or `x.x.x.x` format.
