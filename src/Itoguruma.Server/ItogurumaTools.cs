@@ -38,7 +38,8 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
     public ToolData<VersionResult> GetVersion() => new(new("itoguruma", ProductInfo.Version));
 
     /// <summary>エージェントを登録または更新します。</summary>
-    [McpServerTool(Name = "register_agent", UseStructuredContent = true)]
+    [McpServerTool(Name = "register_agent", UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<Agent>))]
     [Description("Register or refresh an agent.")]
     public async Task<CallToolResult> RegisterAgent(string agent_id, string agent_type, string project_id, string? name = null,
         string? session_id = null, string? metadata_json = null,
@@ -53,7 +54,8 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         }
     }
 
-    [McpServerTool(Name = "register_project_inbox", Idempotent = true, UseStructuredContent = true)]
+    [McpServerTool(Name = "register_project_inbox", Idempotent = true, UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<Project>))]
     [Description("Atomically register or update a canonical Project and its Project Inbox agent.")]
     public async Task<CallToolResult> RegisterProjectInbox(string project_id, string display_name,
         CancellationToken cancellationToken = default)
@@ -79,7 +81,8 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
         new(await service.ListProjectsAsync(cancellationToken));
 
     /// <summary>エージェント登録を削除します。</summary>
-    [McpServerTool(Name = "unregister_agent", UseStructuredContent = true)]
+    [McpServerTool(Name = "unregister_agent", UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<UnregisterResult>))]
     [Description("Remove an agent registration. Fails if the agent is referenced by existing messages or deliveries.")]
     public async Task<CallToolResult> UnregisterAgent(string agent_id, CancellationToken cancellationToken = default)
     {
@@ -100,7 +103,8 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
     }
 
     /// <summary>対象エージェントに関係するメッセージ履歴を削除または事前確認します。</summary>
-    [McpServerTool(Name = "delete_agent_history", Destructive = true, UseStructuredContent = true)]
+    [McpServerTool(Name = "delete_agent_history", Destructive = true, UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<AgentHistoryDeleteResult>))]
     [Description("Preview or delete all message and delivery history associated with one exact agent ID. " +
         "dry_run=true does not delete data. The operation never returns message bodies or payloads.")]
     public async Task<CallToolResult> DeleteAgentHistory(string agent_id, bool dry_run,
@@ -231,7 +235,8 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
             consumer_agent_id, cancellationToken));
 
     /// <summary>CRファイルの現在状態と保存済みpayloadの整合性を検査します。</summary>
-    [McpServerTool(Name = "inspect_change_request", ReadOnly = true, UseStructuredContent = true)]
+    [McpServerTool(Name = "inspect_change_request", ReadOnly = true, UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<ChangeRequestInspection>))]
     [Description("Validate a change_request payload against its canonical CR file and report status drift.")]
     public async Task<CallToolResult> InspectChangeRequest(string payload_json,
         CancellationToken cancellationToken = default)
@@ -314,7 +319,8 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
     }
 
     /// <summary>認証トークンを確認文字列付きで更新します。</summary>
-    [McpServerTool(Name = "rotate_auth_token", Destructive = true, UseStructuredContent = true)]
+    [McpServerTool(Name = "rotate_auth_token", Destructive = true, UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<AuthRotationResult>))]
     [Description("Rotate the user authentication token when confirmation is exactly ROTATE. " +
         "The token value is never returned. Restart the server and all clients afterward.")]
     public CallToolResult RotateAuthToken(string confirmation)
