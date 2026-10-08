@@ -16,7 +16,7 @@ Environment variables override `src/Itoguruma.Server/appsettings.json`. Installe
 
 | Environment variable / key | Required | Type | Default | Constraints |
 | :--- | :---: | :--- | :--- | :--- |
-| Windows credential `Itoguruma/McpBearerToken` | Yes | Secret | None | Managed by the installer and `itoguruma auth rotate`. |
+| Windows credential `Itoguruma/McpBearerToken` | Yes | Secret | None | Created by the installer only when no token is configured; upgrades and reinstalls keep the existing token so running clients stay authorized. Replace it explicitly with `itoguruma auth rotate`. |
 | `ITOGURUMA_URL` | No | Absolute HTTP URL | `http://127.0.0.1:47631` | Must remain loopback for the supported deployment. |
 | `ITOGURUMA_DB` | No | File path | User Local Application Data database | Parent directory must be writable. |
 | `ITOGURUMA_CONFIG_DIR` | No | Directory path | Installation `config` directory | Must be writable for generated client configuration. |

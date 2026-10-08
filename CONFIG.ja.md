@@ -16,7 +16,7 @@
 
 | 環境変数／キー | 必須 | 型 | 既定値 | 制約 |
 | :--- | :---: | :--- | :--- | :--- |
-| Windows資格情報`Itoguruma/McpBearerToken` | はい | 秘密情報 | なし | インストーラーと`itoguruma auth rotate`が管理します。 |
+| Windows資格情報`Itoguruma/McpBearerToken` | はい | 秘密情報 | なし | トークンが未設定の場合だけインストーラーが作成します。アップグレードや再インストールでは既存トークンを維持するため、稼働中のクライアントは認証されたまま使えます。明示的に更新する場合は`itoguruma auth rotate`を使います。 |
 | `ITOGURUMA_URL` | いいえ | 絶対HTTP URL | `http://127.0.0.1:47631` | 対応構成ではloopbackに限定します。 |
 | `ITOGURUMA_DB` | いいえ | ファイルパス | Local Application Data配下のDB | 親ディレクトリへの書き込み権限が必要です。 |
 | `ITOGURUMA_CONFIG_DIR` | いいえ | ディレクトリパス | インストール先の`config` | 生成設定の書き込み権限が必要です。 |

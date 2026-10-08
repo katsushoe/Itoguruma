@@ -292,10 +292,14 @@ try {
     $proxyPath = Join-Path $destinationRoot $packageProxyRelativePath
     $mcpUrl = $ServerUrl.TrimEnd("/") + "/mcp"
     $cliPath = Join-Path $cliDirectory "itoguruma.exe"
-    & $cliPath auth status | Out-Null
+    $authStatus = @(& $cliPath auth status)
     if ($LASTEXITCODE -ne 0) { throw "Authentication status check failed." }
-    "ROTATE" | & $cliPath auth rotate | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Authentication credential creation failed." }
+    # Keep an existing token so running Codex and Claude Code sessions stay authorized across upgrades.
+    # The "Generation ID:" line is printed only when a token is configured and is not localized.
+    if (!($authStatus | Where-Object { $_ -like "Generation ID:*" })) {
+        "ROTATE" | & $cliPath auth rotate | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Authentication credential creation failed." }
+    }
     foreach ($variableName in @("ITOGURUMA_AUTH_TOKEN", "ITOGURUMA_DB", "ITOGURUMA_URL", "ITOGURUMA_CONFIG_DIR", "ITOGURUMA_LOG_DIR")) {
         [Environment]::SetEnvironmentVariable($variableName, $null, "User")
     }

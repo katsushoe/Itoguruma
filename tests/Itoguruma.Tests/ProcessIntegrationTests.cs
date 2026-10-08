@@ -1004,6 +1004,21 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Installer_WhenTokenIsAlreadyConfigured_DoesNotRotateIt()
+    {
+        var installer = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "scripts", "Install-Itoguruma.ps1"));
+        var statusIndex = installer.IndexOf("$authStatus = @(& $cliPath auth status)", StringComparison.Ordinal);
+        var guardIndex = installer.IndexOf(
+            "if (!($authStatus | Where-Object { $_ -like \"Generation ID:*\" })) {", StringComparison.Ordinal);
+        var rotateIndex = installer.IndexOf("\"ROTATE\" | & $cliPath auth rotate", StringComparison.Ordinal);
+
+        Assert.True(statusIndex >= 0, "The installer must read the current authentication status.");
+        Assert.True(guardIndex > statusIndex, "Rotation must be guarded by the configured-token check.");
+        Assert.True(rotateIndex > guardIndex, "The installer must rotate only inside the configured-token guard.");
+        Assert.Equal(rotateIndex, installer.LastIndexOf("auth rotate", StringComparison.Ordinal) - "\"ROTATE\" | & $cliPath ".Length);
+    }
+
+    [Fact]
     public void Installer_WhenGeneratingHookExamples_UsesClientSpecificEvents()
     {
         var repositoryRoot = FindRepositoryRoot();
