@@ -69,6 +69,38 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task McpServer_WhenToolsAreListed_AdvertisesTypedStructuredOutputSchemas()
+    {
+        var result = await RunMcpAsync(
+        [
+            Request(1, "initialize", new
+            {
+                protocolVersion = "2025-11-25",
+                capabilities = new { },
+                clientInfo = new { name = "itoguruma-tests", version = "1.0" }
+            }),
+            Request(2, "tools/list", new { })
+        ], Path.Combine(_directory, "mcp-tools-list.db"));
+
+        var tools = result.Output[1].RootElement.GetProperty("result").GetProperty("tools");
+        string[] callToolResultTools =
+        [
+            "register_agent", "register_project_inbox", "unregister_agent",
+            "delete_agent_history", "inspect_change_request", "rotate_auth_token"
+        ];
+
+        foreach (var name in callToolResultTools)
+        {
+            var tool = Assert.Single(tools.EnumerateArray(), item =>
+                item.GetProperty("name").GetString() == name);
+            var properties = tool.GetProperty("outputSchema").GetProperty("properties");
+            Assert.True(properties.TryGetProperty("data", out _), $"{name} should expose the ToolData.data schema.");
+            Assert.False(properties.TryGetProperty("structuredContent", out _),
+                $"{name} must not expose CallToolResult.structuredContent as its output schema.");
+        }
+    }
+
+    [Fact]
     public async Task McpServer_WhenConversationHistoryIsRequested_ReturnsMessagesInChronologicalOrder()
     {
         var databasePath = Path.Combine(_directory, "mcp-history.db");

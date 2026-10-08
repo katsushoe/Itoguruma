@@ -8,4 +8,5 @@ artifacts/
 release/
 data/
 .local/
+.tmp/
 .claude/settings.local.json
