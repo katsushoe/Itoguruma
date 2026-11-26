@@ -21,30 +21,38 @@ internal sealed class StatusLed : IDisposable
 
     private static Bitmap Draw(Color color)
     {
+        // メニューの画像領域は16x16に縮尺されるため、正方形のビットマップ内に横長のピル型を描きます。
         const int size = 16;
         var bitmap = new Bitmap(size, size);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         graphics.Clear(Color.Transparent);
-        var body = new RectangleF(1.5f, 1.5f, size - 3, size - 3);
+        var body = new RectangleF(0.5f, 4.5f, size - 1, 7f);
 
-        // 中心が明るく縁が暗い球面で、点灯したLEDに見せます。
-        using (var path = new GraphicsPath())
+        // 上が明るく下が暗い円筒面で、点灯したLEDに見せます。
+        using (var path = Pill(body))
         {
-            path.AddEllipse(body);
-            using var fill = new PathGradientBrush(path)
-            {
-                CenterColor = ControlPaint.Light(color, 0.6f),
-                SurroundColors = [ControlPaint.Dark(color, 0.15f)],
-                CenterPoint = new PointF(size * 0.45f, size * 0.4f)
-            };
-            graphics.FillEllipse(fill, body);
+            using var fill = new LinearGradientBrush(body, ControlPaint.Light(color, 0.5f),
+                ControlPaint.Dark(color, 0.1f), LinearGradientMode.Vertical);
+            graphics.FillPath(fill, path);
+            using var rim = new Pen(ControlPaint.Dark(color, 0.45f), 1f);
+            graphics.DrawPath(rim, path);
         }
-        using (var rim = new Pen(ControlPaint.Dark(color, 0.45f), 1f))
-            graphics.DrawEllipse(rim, body);
-        using (var highlight = new SolidBrush(Color.FromArgb(170, Color.White)))
-            graphics.FillEllipse(highlight, 4.5f, 3.5f, 4f, 3f);
+        using (var highlight = Pill(new RectangleF(body.X + 3f, body.Y + 1.2f, body.Width - 6f, 2f)))
+        using (var brush = new SolidBrush(Color.FromArgb(160, Color.White)))
+            graphics.FillPath(brush, highlight);
         return bitmap;
+    }
+
+    /// <summary>両端が半円の角丸長方形（ピル型）の輪郭を作ります。</summary>
+    private static GraphicsPath Pill(RectangleF bounds)
+    {
+        var diameter = Math.Min(bounds.Height, bounds.Width);
+        var path = new GraphicsPath();
+        path.AddArc(bounds.X, bounds.Y, diameter, diameter, 90, 180);
+        path.AddArc(bounds.Right - diameter, bounds.Y, diameter, diameter, 270, 180);
+        path.CloseFigure();
+        return path;
     }
 
     public void Dispose()
