@@ -11,7 +11,17 @@ internal enum ServerState
     /// <summary>サーバープロセスは存在しますが、Healthエンドポイントが応答しません。</summary>
     NotResponding,
     /// <summary>サーバープロセスもHealth応答もありません。</summary>
-    Stopped
+    Stopped,
+    /// <summary>Healthエンドポイントが応答したものの正常ではない（HTTPエラーまたは <c>status</c> が <c>ok</c> 以外）か、起動・停止操作が完了しませんでした。</summary>
+    Error
+}
+
+/// <summary>Healthエンドポイントへの1回の問い合わせ結果です。</summary>
+internal enum HealthProbe
+{
+    Ok,
+    Unhealthy,
+    NoResponse
 }
 
 /// <summary>状態確認の結果です。<see cref="Version"/> は <see cref="ServerState.Running"/> のときだけ設定されます。</summary>
@@ -83,13 +93,25 @@ internal sealed class ServerController
         catch (JsonException) { return null; }
     }
 
+    /// <summary>HTTP状態コードと本文からHealth応答を分類します。</summary>
+    internal static (HealthProbe Probe, string? Version) ClassifyHealth(int statusCode, string body)
+    {
+        if (statusCode is < 200 or > 299) return (HealthProbe.Unhealthy, null);
+        var version = ParseHealthVersion(body);
+        return version is null ? (HealthProbe.Unhealthy, null) : (HealthProbe.Ok, version);
+    }
+
     public async Task<ServerStatus> GetStatusAsync(CancellationToken cancellationToken = default)
     {
-        var version = await ProbeHealthAsync(cancellationToken);
-        if (version is not null) return new(ServerState.Running, version);
-        return FindServerProcesses().Count > 0
-            ? new(ServerState.NotResponding, null)
-            : new(ServerState.Stopped, null);
+        var (probe, version) = await ProbeHealthAsync(cancellationToken);
+        return probe switch
+        {
+            HealthProbe.Ok => new(ServerState.Running, version),
+            HealthProbe.Unhealthy => new(ServerState.Error, null),
+            _ => FindServerProcesses().Count > 0
+                ? new(ServerState.NotResponding, null)
+                : new(ServerState.Stopped, null)
+        };
     }
 
     /// <summary>サーバーを起動し、Healthが応答するまで待ちます。既に稼働中なら何もしません。</summary>
@@ -114,11 +136,12 @@ internal sealed class ServerController
         var deadline = DateTime.UtcNow + StartTimeout;
         while (DateTime.UtcNow < deadline)
         {
-            var version = await ProbeHealthAsync(cancellationToken);
-            if (version is not null) return new(ServerState.Running, version);
+            var (probe, version) = await ProbeHealthAsync(cancellationToken);
+            if (probe == HealthProbe.Ok) return new(ServerState.Running, version);
             await Task.Delay(500, cancellationToken);
         }
-        return await GetStatusAsync(cancellationToken);
+        // 期限内に稼働状態へ達しなかった起動はエラーとして扱います。
+        return new(ServerState.Error, null);
     }
 
     /// <summary>タスクを終了し、インストール先のサーバープロセスが残っていれば終了させます。</summary>
@@ -140,19 +163,20 @@ internal sealed class ServerController
                 catch (InvalidOperationException) { }
             }
         }
-        return await GetStatusAsync(cancellationToken);
+        var status = await GetStatusAsync(cancellationToken);
+        // 停止しきれなかった場合はエラーとして扱います。
+        return status.State == ServerState.Stopped ? status : new(ServerState.Error, null);
     }
 
-    private async Task<string?> ProbeHealthAsync(CancellationToken cancellationToken)
+    private async Task<(HealthProbe Probe, string? Version)> ProbeHealthAsync(CancellationToken cancellationToken)
     {
         using var client = new HttpClient { Timeout = HealthTimeout };
         try
         {
             using var response = await client.GetAsync(_healthUri, cancellationToken);
-            if (!response.IsSuccessStatusCode) return null;
-            return ParseHealthVersion(await response.Content.ReadAsStringAsync(cancellationToken));
+            return ClassifyHealth((int)response.StatusCode, await response.Content.ReadAsStringAsync(cancellationToken));
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return null; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return (HealthProbe.NoResponse, null); }
     }
 
     private List<Process> FindServerProcesses()

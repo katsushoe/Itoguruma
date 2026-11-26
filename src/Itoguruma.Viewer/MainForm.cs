@@ -221,7 +221,7 @@ public sealed class MainForm : Form
             _state.Text = start ? L("Server start failed", "サーバーの起動に失敗しました") : L("Server stop failed", "サーバーの停止に失敗しました");
             _details.Text = ex.Message;
             _notifyIcon.ShowBalloonTip(4000, "Itoguruma", _state.Text + L(". Open the viewer for details.", "。詳細はViewerを開いてください。"), ToolTipIcon.Error);
-            status = await _serverController.GetStatusAsync();
+            status = new(ServerState.Error, null);
         }
         finally
         {
@@ -247,6 +247,7 @@ public sealed class MainForm : Form
             ? L("MCP server: running", "MCPサーバー: 稼働中")
             : L($"MCP server: running ({status.Version})", $"MCPサーバー: 稼働中（{status.Version}）"),
         ServerState.NotResponding => L("MCP server: not responding", "MCPサーバー: 応答なし"),
+        ServerState.Error => L("MCP server: error", "MCPサーバー: エラー"),
         _ => L("MCP server: stopped", "MCPサーバー: 停止中")
     };
 

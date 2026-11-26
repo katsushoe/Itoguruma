@@ -7,16 +7,19 @@ internal sealed class StatusLed : IDisposable
 {
     private readonly Bitmap _running = Draw(Color.FromArgb(40, 190, 70));
     private readonly Bitmap _notResponding = Draw(Color.FromArgb(240, 170, 30));
-    private readonly Bitmap _stopped = Draw(Color.FromArgb(215, 50, 45));
-    private readonly Bitmap _unknown = Draw(Color.FromArgb(150, 150, 150));
+    private readonly Bitmap _error = Draw(Color.FromArgb(215, 50, 45));
+    private readonly Bitmap _stopped = Draw(Color.FromArgb(150, 150, 150));
 
-    /// <summary>状態に対応する画像を返します。null は未確認です。返した画像は破棄しないでください。</summary>
+    /// <summary>
+    /// 状態に対応する画像を返します。稼働中は緑、応答なしは黄、エラーは赤、停止中と未確認（null）は灰です。
+    /// 返した画像は破棄しないでください。
+    /// </summary>
     public Image For(ServerStatus? status) => status?.State switch
     {
         ServerState.Running => _running,
         ServerState.NotResponding => _notResponding,
-        ServerState.Stopped => _stopped,
-        _ => _unknown
+        ServerState.Error => _error,
+        _ => _stopped
     };
 
     private static Bitmap Draw(Color color)
@@ -59,7 +62,7 @@ internal sealed class StatusLed : IDisposable
     {
         _running.Dispose();
         _notResponding.Dispose();
+        _error.Dispose();
         _stopped.Dispose();
-        _unknown.Dispose();
     }
 }

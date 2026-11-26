@@ -38,7 +38,7 @@ Codex/Claude Codeの設定は`itoguruma configure codex|claude`が生成しま�
 
 ### Viewerのタスクトレイと更新
 
-インストーラーはViewerをタスクトレイで起動します。Viewerは閉じるボタンまたは最小化操作で画面を隠し、トレイアイコンをダブルクリックすると再表示します。右クリックメニューから設定、更新確認、MCPサーバー、終了を選べます。MCPサーバーのサブメニューは、`Itoguruma:ServerUrl`の`/health`への応答からサーバーの状態（稼働中と版、応答なし、停止中）を、サブメニューと状態行の両方にLED画像付きで表示し（稼働中は緑、応答なしは黄、停止中は赤、未確認は灰）、「状態を確認」「起動」「停止」を提供します。「起動」はインストーラーが登録したタスク`ItogurumaServer`を実行し、タスクがない場合は`bin\server\Itoguruma.Server.exe`を直接起動します。「停止」は確認後にタスクを終了し、このインストール先のサーバープロセスが残っていれば終了させます。停止中は、Itogurumaを使うCodexとClaude Codeのすべてのセッションが、再び起動するまで切断されます。既定では自動更新とWindowsサインイン時の起動が有効です。スタートアップは現在のWindowsユーザーの`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`に登録します。Viewer設定はユーザー単位のJSONで、Serverの`appsettings.json`とは別です。
+インストーラーはViewerをタスクトレイで起動します。Viewerは閉じるボタンまたは最小化操作で画面を隠し、トレイアイコンをダブルクリックすると再表示します。右クリックメニューから設定、更新確認、MCPサーバー、終了を選べます。MCPサーバーのサブメニューは、`Itoguruma:ServerUrl`の`/health`への応答からサーバーの状態（稼働中と版、応答なし、エラー、停止中）を、サブメニューと状態行の両方にLED画像付きで表示し（稼働中は緑、応答なしは黄＝プロセスはあるが`/health`が応答しない、エラーは赤＝`/health`がHTTPエラーまたは`ok`以外の状態を返した場合やメニューからの起動・停止が完了しなかった場合、停止中と未確認は灰）、「状態を確認」「起動」「停止」を提供します。「起動」はインストーラーが登録したタスク`ItogurumaServer`を実行し、タスクがない場合は`bin\server\Itoguruma.Server.exe`を直接起動します。「停止」は確認後にタスクを終了し、このインストール先のサーバープロセスが残っていれば終了させます。停止中は、Itogurumaを使うCodexとClaude Codeのすべてのセッションが、再び起動するまで切断されます。既定では自動更新とWindowsサインイン時の起動が有効です。スタートアップは現在のWindowsユーザーの`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`に登録します。Viewer設定はユーザー単位のJSONで、Serverの`appsettings.json`とは別です。
 
 自動更新は起動時にGitHubの最新正式Releaseを確認します。現在版より新しい場合は対応するx64 MSIと`SHA256SUMS.txt`を一時フォルダーへダウンロードし、SHA-256が一致した場合だけWindows Installerを起動します。Release確認、ダウンロードまたは検証に失敗した場合も、現在のItogurumaは使用できます。更新を適用するとServerが再起動されます。
 

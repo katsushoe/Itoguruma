@@ -46,6 +46,20 @@ public sealed class ServerControllerTests : IDisposable
         Assert.Equal(expected, ServerController.ParseHealthVersion(json));
     }
 
+    [Theory]
+    [InlineData(200, """{"status":"ok","version":"0.3.48"}""", "Ok", "0.3.48")]
+    [InlineData(200, """{"status":"degraded"}""", "Unhealthy", null)]
+    [InlineData(500, """{"status":"ok","version":"0.3.48"}""", "Unhealthy", null)]
+    [InlineData(503, "", "Unhealthy", null)]
+    public void ClassifyHealth_TreatsHttpErrorsAndNonOkStatusAsUnhealthy(int statusCode, string body,
+        string expectedProbe, string? expectedVersion)
+    {
+        var (probe, version) = ServerController.ClassifyHealth(statusCode, body);
+
+        Assert.Equal(expectedProbe, probe.ToString());
+        Assert.Equal(expectedVersion, version);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
