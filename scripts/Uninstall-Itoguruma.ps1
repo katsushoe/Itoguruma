@@ -5,6 +5,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $destinationRoot = [System.IO.Path]::GetFullPath($InstallDirectory)
+$cliPath = Join-Path $destinationRoot "bin\itoguruma\itoguruma.exe"
+if (Test-Path -LiteralPath $cliPath -PathType Leaf) {
+    foreach ($client in @("codex", "claude")) {
+        & $cliPath unconfigure $client
+        if ($LASTEXITCODE -ne 0) { throw "Itoguruma $client configuration cleanup failed." }
+    }
+}
 $taskName = "ItogurumaServer"
 $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 if ($null -ne $existingTask) {
@@ -16,6 +23,17 @@ $serverPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
 Get-Process -Name "Itoguruma.Server" -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -eq $serverPath } |
     Stop-Process -Force
+
+# The tray Viewer locks bin\viewer; stop it so the managed bin directory can be removed.
+$viewerPath = Join-Path $destinationRoot "bin\viewer\itoguruma-viewer.exe"
+$runningViewers = @(Get-Process -Name "itoguruma-viewer" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -ieq $viewerPath })
+$runningViewers | Stop-Process -Force
+$runningViewers | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
+if (@(Get-Process -Name "itoguruma-viewer" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -ieq $viewerPath }).Count -ne 0) {
+    throw "The Itoguruma Viewer process did not stop."
+}
 
 $removedPaths = @(
     (Join-Path $destinationRoot "bin\itoguruma"),

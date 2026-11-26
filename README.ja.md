@@ -18,7 +18,7 @@ itoguruma inbox --agent claude-main --consumer-agent claude-root --lease-seconds
 
 ## インストール
 
-GitHub Releasesは推奨のx64 MSI、`Install-Itoguruma.ps1`、自己完結型ZIPを提供します。MSIでは英語または日本語を選択でき、無人インストールでは`ITOGURUMA_LANGUAGE=en`または`ITOGURUMA_LANGUAGE=ja`を指定できます。インストーラに.NET SDKは不要です。ソースからビルドする場合は.NET 8 SDKが必要です。
+GitHub Releasesは推奨のx64 MSI、`Install-Itoguruma.ps1`、自己完結型ZIPを提供します。MSIでは英語または日本語を選択でき、無人インストールでは`ITOGURUMA_LANGUAGE=en`または`ITOGURUMA_LANGUAGE=ja`を指定できます。既定のインストール先は`C:\Itoguruma`で、`ITOGURUMA_INSTALL_DIR`で指定・移動できます（[CONFIG.ja.md](CONFIG.ja.md#install-directory)）。インストーラに.NET SDKは不要です。ソースからビルドする場合は.NET 8 SDKが必要です。
 
 ```powershell
 dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj
@@ -29,6 +29,8 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 ## 設定
 
 サーバーは実行時設定を`config/appsettings.json`から、BearerトークンをWindows資格情報マネージャーから読み取ります。CodexとClaudeは同梱のローカルstdioプロキシを経由して接続します。詳細は[CONFIG.ja.md](CONFIG.ja.md)を参照してください。
+
+メッセージViewerはタスクトレイに常駐し、既定ではWindowsへのサインイン時に起動してGitHub Releasesの新しい正式版を確認します。自動更新とスタートアップ起動はトレイアイコンの右クリックメニューにある「設定」から変更できます。更新時はMSIのSHA-256をリリースの`SHA256SUMS.txt`と照合します。
 
 ## 使用方法
 

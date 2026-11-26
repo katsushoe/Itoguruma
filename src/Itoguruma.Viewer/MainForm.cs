@@ -1,11 +1,17 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Text.Json;
 using Itoguruma.Core;
 
 namespace Itoguruma.Viewer;
 
 public sealed class MainForm : Form
 {
+    private ViewerSettings _settings = ViewerSettings.Load();
+    private readonly NotifyIcon _notifyIcon = new();
+    private readonly bool _startHidden;
+    private bool _allowClose;
+    private bool _checkingForUpdates;
     private readonly TextBox _databasePath = new()
     {
         Dock = DockStyle.Fill,
@@ -46,8 +52,10 @@ public sealed class MainForm : Form
     private IReadOnlyList<MonitoredMessage> _displayedMessages = [];
     private bool _refreshing;
 
-    public MainForm(string? databasePath)
+    public MainForm(string? databasePath, bool startHidden, Icon icon)
     {
+        Icon = icon;
+        _startHidden = startHidden;
         Text = $"Itoguruma Message Viewer {ProductInfo.Version}";
         Width = 1280;
         Height = 760;
@@ -62,12 +70,43 @@ public sealed class MainForm : Form
         _agentFilter.SelectedIndex = 0;
         ConfigureGrid();
         Controls.Add(BuildLayout());
+        ConfigureTray();
+        _notifyIcon.Icon = icon;
+        _notifyIcon.Visible = true;
 
         _timer.Interval = 2000;
         _timer.Tick += async (_, _) => await RefreshAsync();
         _timer.Start();
-        Shown += async (_, _) => await RefreshAsync();
-        FormClosed += (_, _) => _timer.Stop();
+        Shown += async (_, _) =>
+        {
+            try { StartupRegistration.SetEnabled(_settings.StartWithWindows, Application.ExecutablePath); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                _state.Text = L("Startup setting could not be applied", "スタートアップ設定を適用できませんでした");
+                _details.Text = ex.Message;
+            }
+            if (_startHidden) Hide();
+            await RefreshAsync();
+            if (_settings.AutoUpdate) _ = CheckForUpdatesAsync(showNoUpdate: false);
+        };
+        FormClosing += (_, e) =>
+        {
+            if (_allowClose || e.CloseReason != CloseReason.UserClosing) return;
+            e.Cancel = true;
+            Hide();
+        };
+        Resize += (_, _) =>
+        {
+            if (WindowState != FormWindowState.Minimized) return;
+            Hide();
+            WindowState = FormWindowState.Normal;
+        };
+        FormClosed += (_, _) =>
+        {
+            _timer.Stop();
+            _notifyIcon.Visible = false;
+            _notifyIcon.Dispose();
+        };
         _messages.SelectionChanged += (_, _) => ShowSelectedMessage();
         _messages.CellDoubleClick += ShowMessageDetails;
         _interval.ValueChanged += (_, _) => _timer.Interval = decimal.ToInt32(_interval.Value) * 1000;
@@ -81,7 +120,8 @@ public sealed class MainForm : Form
         root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.Percent, 100));
 
-        var database = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 4, Padding = new(8, 8, 8, 2) };
+        var database = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 5, Padding = new(8, 8, 8, 2) };
+        database.ColumnStyles.Add(new(SizeType.AutoSize));
         database.ColumnStyles.Add(new(SizeType.AutoSize));
         database.ColumnStyles.Add(new(SizeType.Percent, 100));
         database.ColumnStyles.Add(new(SizeType.AutoSize));
@@ -94,6 +134,9 @@ public sealed class MainForm : Form
         var refresh = new Button { Text = L("Refresh", "更新"), AutoSize = true };
         refresh.Click += async (_, _) => await RefreshAsync();
         database.Controls.Add(refresh, 3, 0);
+        var settings = new Button { Text = L("Settings...", "設定..."), AutoSize = true };
+        settings.Click += (_, _) => ShowSettings();
+        database.Controls.Add(settings, 4, 0);
 
         var filters = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new(8, 2, 8, 6), WrapContents = true };
         filters.Controls.AddRange([
@@ -109,6 +152,70 @@ public sealed class MainForm : Form
         root.Controls.Add(filters, 0, 1);
         root.Controls.Add(split, 0, 2);
         return root;
+    }
+
+    private void ConfigureTray()
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add(L("Open", "開く"), null, (_, _) => ShowWindow());
+        menu.Items.Add(L("Settings...", "設定..."), null, (_, _) => ShowSettings());
+        menu.Items.Add(L("Check for updates", "更新を確認"), null, async (_, _) => await CheckForUpdatesAsync(showNoUpdate: true));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(L("Exit", "終了"), null, (_, _) => ExitApplication());
+        _notifyIcon.Text = "Itoguruma";
+        _notifyIcon.ContextMenuStrip = menu;
+        _notifyIcon.DoubleClick += (_, _) => ShowWindow();
+    }
+
+    private void ShowWindow()
+    {
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
+    private void ShowSettings()
+    {
+        using var dialog = new ViewerSettingsForm(_settings);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        _settings = dialog.Result;
+    }
+
+    private void ExitApplication()
+    {
+        _allowClose = true;
+        Close();
+    }
+
+    private async Task CheckForUpdatesAsync(bool showNoUpdate)
+    {
+        if (_checkingForUpdates) return;
+        _checkingForUpdates = true;
+        try
+        {
+            var installed = await new ReleaseUpdater().InstallUpdateIfAvailableAsync();
+            if (installed)
+            {
+                _notifyIcon.ShowBalloonTip(4000, "Itoguruma", L("An update is being installed.", "更新をインストールしています。"), ToolTipIcon.Info);
+                _allowClose = true;
+                Close();
+            }
+            else if (showNoUpdate)
+            {
+                _notifyIcon.ShowBalloonTip(3000, "Itoguruma", L("Itoguruma is up to date.", "Itogurumaは最新です。"), ToolTipIcon.Info);
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or JsonException or IOException or UnauthorizedAccessException or System.Security.SecurityException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            _state.Text = L("Update check failed", "更新確認に失敗しました");
+            _details.Text = ex.Message;
+            if (showNoUpdate)
+                _notifyIcon.ShowBalloonTip(4000, "Itoguruma", L("The update check failed. Open the viewer for details.", "更新を確認できませんでした。詳細はViewerを開いてください。"), ToolTipIcon.Warning);
+        }
+        finally
+        {
+            _checkingForUpdates = false;
+        }
     }
 
     private void ConfigureGrid()

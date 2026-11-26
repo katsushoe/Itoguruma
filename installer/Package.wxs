@@ -7,6 +7,17 @@
     <MediaTemplate EmbedCab="yes" />
 
     <Property Id="ITOGURUMA_LANGUAGE" Value="en" />
+    <!-- Install root. Public so it can be set on the msiexec command line; empty means "keep the recorded location". -->
+    <Property Id="ITOGURUMA_INSTALL_DIR" Secure="yes" />
+    <!-- Install root recorded by a previous install; empty for versions that always used C:\Itoguruma. -->
+    <Property Id="ITOGURUMA_PREVIOUS_INSTALL_DIR" Secure="yes">
+      <RegistrySearch Id="PreviousInstallDirectorySearch" Root="HKCU" Key="Software\sazysoft\ItogurumaInstaller"
+                      Name="InstallDirectory" Type="raw" />
+    </Property>
+    <SetProperty Id="ITOGURUMA_PREVIOUS_INSTALL_DIR" Action="SetDefaultPreviousInstallDirectory" Value="C:\Itoguruma"
+                 After="AppSearch" Sequence="both" Condition="NOT ITOGURUMA_PREVIOUS_INSTALL_DIR" />
+    <SetProperty Id="ITOGURUMA_INSTALL_DIR" Action="SetDefaultInstallDirectory" Value="[ITOGURUMA_PREVIOUS_INSTALL_DIR]"
+                 After="SetDefaultPreviousInstallDirectory" Sequence="both" Condition="NOT ITOGURUMA_INSTALL_DIR" />
 
     <StandardDirectory Id="LocalAppDataFolder">
         <Directory Id="INSTALLFOLDER" Name="Itoguruma Installer">
@@ -18,6 +29,8 @@
             <File Id="ReleaseArchive" Source="$(var.ReleaseArchive)" />
             <RegistryValue Root="HKCU" Key="Software\sazysoft\ItogurumaInstaller" Name="Installed"
                            Type="integer" Value="1" KeyPath="yes" />
+            <RegistryValue Root="HKCU" Key="Software\sazysoft\ItogurumaInstaller" Name="InstallDirectory"
+                           Type="string" Value="[ITOGURUMA_INSTALL_DIR]" />
             <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
           </Component>
         </Directory>
@@ -28,17 +41,17 @@
     </Feature>
 
     <SetProperty Id="InstallApplication"
-                 Value='&quot;[System64Folder]cmd.exe&quot; /d /c call &quot;[INSTALLFOLDER]Install-Itoguruma-Msi.cmd&quot; &quot;[INSTALLFOLDER]Install-Itoguruma.ps1&quot; &quot;[#ReleaseArchive]&quot; &quot;[ITOGURUMA_LANGUAGE]&quot;'
+                 Value='&quot;[System64Folder]cmd.exe&quot; /d /c call &quot;[INSTALLFOLDER]Install-Itoguruma-Msi.cmd&quot; &quot;[INSTALLFOLDER]Install-Itoguruma.ps1&quot; &quot;[#ReleaseArchive]&quot; &quot;[ITOGURUMA_LANGUAGE]&quot; &quot;[ITOGURUMA_INSTALL_DIR]&quot; &quot;[ITOGURUMA_PREVIOUS_INSTALL_DIR]&quot;'
                  Before="InstallApplication" Sequence="execute" />
     <CustomAction Id="InstallApplication" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
                   Execute="deferred" Return="check" Impersonate="yes" />
     <SetProperty Id="WixQuietExecCmdLine"
-                 Value='&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -c &quot;$b=&apos;[LocalAppDataFolder]Itoguruma Upgrade Backup&apos;;rm $b -r -fo -ea 0;cp C:\Itoguruma $b -r -fo&quot;'
+                 Value='&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -c &quot;$b=&apos;[LocalAppDataFolder]Itoguruma Upgrade Backup&apos;;rm $b -r -fo -ea 0;cp &apos;[ITOGURUMA_PREVIOUS_INSTALL_DIR]&apos; $b -r -fo&quot;'
                  Before="BackupUserData" Sequence="execute" />
     <CustomAction Id="BackupUserData" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
                   Execute="immediate" Return="check" Impersonate="yes" />
     <SetProperty Id="UninstallApplication"
-                 Value='&quot;[System64Folder]cmd.exe&quot; /d /c call &quot;[INSTALLFOLDER]Uninstall-Itoguruma-Msi.cmd&quot; &quot;[INSTALLFOLDER]Uninstall-Itoguruma.ps1&quot;'
+                 Value='&quot;[System64Folder]cmd.exe&quot; /d /c call &quot;[INSTALLFOLDER]Uninstall-Itoguruma-Msi.cmd&quot; &quot;[INSTALLFOLDER]Uninstall-Itoguruma.ps1&quot; &quot;[ITOGURUMA_PREVIOUS_INSTALL_DIR]&quot;'
                  Before="UninstallApplication" Sequence="execute" />
     <CustomAction Id="UninstallApplication" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
                   Execute="deferred" Return="check" Impersonate="yes" />

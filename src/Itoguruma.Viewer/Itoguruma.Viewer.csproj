@@ -4,8 +4,10 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>itoguruma-viewer</AssemblyName>
+    <ApplicationIcon>Itoguruma.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Itoguruma.Core/Itoguruma.Core.csproj" />
+    <EmbeddedResource Include="$(ApplicationIcon)" LogicalName="Itoguruma.ico" />
   </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-# ADR 0006: Transactional agent-history deletion
+# ADR 0008: Transactional agent-history deletion
 
 ## Status
 

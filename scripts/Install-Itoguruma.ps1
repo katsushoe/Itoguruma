@@ -3,6 +3,7 @@ param(
     [string]$Version = "latest",
     [string]$PackagePath = "",
     [string]$InstallDirectory = "C:\Itoguruma",
+    [string]$PreviousInstallDirectory = "",
     [string]$ConfigDirectory = "",
     [string]$LogDirectory = "",
     [ValidateSet("", "en", "ja")]
@@ -29,7 +30,19 @@ function Get-LocalizedText {
     return $English
 }
 $repository = "katsushoe/Itoguruma"
-$destinationRoot = [System.IO.Path]::GetFullPath($InstallDirectory)
+$destinationRoot = [System.IO.Path]::GetFullPath($InstallDirectory).TrimEnd("\")
+$previousRoot = if ([string]::IsNullOrWhiteSpace($PreviousInstallDirectory)) {
+    $destinationRoot
+} else {
+    [System.IO.Path]::GetFullPath($PreviousInstallDirectory).TrimEnd("\")
+}
+# Relocation moves an existing installation (binaries, data, config, logs) to a new install root.
+$isRelocation = !$previousRoot.Equals($destinationRoot, [System.StringComparison]::OrdinalIgnoreCase)
+if ($isRelocation -and
+    (($destinationRoot + "\").StartsWith($previousRoot + "\", [System.StringComparison]::OrdinalIgnoreCase) -or
+     ($previousRoot + "\").StartsWith($destinationRoot + "\", [System.StringComparison]::OrdinalIgnoreCase))) {
+    throw "The new install directory must not be inside the previous one, or the reverse: $previousRoot -> $destinationRoot"
+}
 $configRoot = if ([string]::IsNullOrWhiteSpace($ConfigDirectory)) {
     Join-Path $destinationRoot "config"
 } else {
@@ -41,15 +54,6 @@ $logRoot = if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
     [System.IO.Path]::GetFullPath($LogDirectory)
 }
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("itoguruma-install-" + [guid]::NewGuid().ToString("N"))
-
-function Invoke-ClientCommand {
-    param([System.Management.Automation.CommandInfo]$Command, [string[]]$Arguments)
-
-    & $Command.Source @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "$($Command.Name) failed with exit code $LASTEXITCODE."
-    }
-}
 
 function Find-ClientCommand {
     param([string]$Name, [string[]]$CandidatePaths)
@@ -174,7 +178,8 @@ try {
 
     $taskName = "ItogurumaServer"
     $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    $serverPaths = @((Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"))
+    $serverPaths = @((Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"),
+        (Join-Path $previousRoot "bin\server\Itoguruma.Server.exe"))
     if ($null -ne $existingTask) {
         $serverPaths += @($existingTask.Actions.Execute | Where-Object { ![string]::IsNullOrWhiteSpace($_) })
         Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -214,6 +219,23 @@ try {
         if (!$serverUnlocked) {
             throw "The existing Itoguruma.Server process did not release its executable."
         }
+    }
+    # The tray Viewer keeps its executable locked; stop it before copying and restart it after installation.
+    $viewerPath = Join-Path $destinationRoot "bin\viewer\itoguruma-viewer.exe"
+    $viewerPaths = @($viewerPath, (Join-Path $previousRoot "bin\viewer\itoguruma-viewer.exe"))
+    $runningViewers = @(Get-Process -Name "itoguruma-viewer" -ErrorAction SilentlyContinue |
+        Where-Object { $viewerPaths -contains $_.Path })
+    $runningViewers | Stop-Process -Force -ErrorAction SilentlyContinue
+    $viewerStopDeadline = [DateTimeOffset]::UtcNow.AddSeconds($ServerStopTimeoutSeconds)
+    do {
+        $runningViewers = @(Get-Process -Name "itoguruma-viewer" -ErrorAction SilentlyContinue |
+            Where-Object { $viewerPaths -contains $_.Path })
+        if ($runningViewers.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTimeOffset]::UtcNow -lt $viewerStopDeadline)
+    if ($runningViewers.Count -ne 0) {
+        $remainingViewerIds = ($runningViewers.Id -join ", ")
+        throw "The existing Itoguruma Viewer process did not stop within $ServerStopTimeoutSeconds seconds. Process IDs: $remainingViewerIds"
     }
     $installedPackageProxyPath = Join-Path $destinationRoot $packageProxyRelativePath
     if ((Test-Path -LiteralPath $installedPackageProxyPath -PathType Leaf) -and
@@ -260,6 +282,27 @@ try {
         }
         Remove-Item -LiteralPath $upgradeBackupRoot -Recurse -Force
     }
+    elseif ($isRelocation) {
+        # Without an MSI upgrade backup, carry the user data over from the previous install root directly.
+        foreach ($name in @("data", "config", "logs")) {
+            $previousPath = Join-Path $previousRoot $name
+            if (Test-Path -LiteralPath $previousPath) {
+                Copy-Item -LiteralPath $previousPath -Destination $destinationRoot -Recurse -Force
+            }
+        }
+    }
+    if ($isRelocation) {
+        # Restored settings still point at the previous root; re-point paths inside it to the new root.
+        $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        $restoredDatabasePath = [string]$settings.Itoguruma.DatabasePath
+        if (![string]::IsNullOrWhiteSpace($restoredDatabasePath) -and
+            ([System.IO.Path]::GetFullPath($restoredDatabasePath)).StartsWith($previousRoot + "\", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $settings.Itoguruma.DatabasePath = $destinationRoot + [System.IO.Path]::GetFullPath($restoredDatabasePath).Substring($previousRoot.Length)
+            $settingsJson = $settings | ConvertTo-Json -Depth 10
+            [System.IO.File]::WriteAllText($settingsPath, $settingsJson, (New-Object System.Text.UTF8Encoding($false)))
+        }
+        $databasePath = $settings.Itoguruma.DatabasePath
+    }
 
     $cliDirectory = Join-Path $destinationRoot "bin\itoguruma"
     $stopCodexDirectory = Join-Path $destinationRoot "bin\stop-codex"
@@ -279,7 +322,11 @@ try {
 
     if (!$NoPath) {
         $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-        $pathEntries = @($userPath -split ";" | Where-Object { ![string]::IsNullOrWhiteSpace($_) })
+        $previousBinRoot = (Join-Path $previousRoot "bin").TrimEnd("\") + "\"
+        $pathEntries = @($userPath -split ";" | Where-Object {
+            ![string]::IsNullOrWhiteSpace($_) -and
+            !($isRelocation -and ($_.TrimEnd("\") + "\").StartsWith($previousBinRoot, [System.StringComparison]::OrdinalIgnoreCase))
+        })
         foreach ($pathDirectory in @($cliDirectory, $stopCodexDirectory, $stopClaudeDirectory)) {
             if (!($pathEntries | Where-Object { $_.TrimEnd("\") -ieq $pathDirectory.TrimEnd("\") })) {
                 $pathEntries += $pathDirectory
@@ -303,30 +350,6 @@ try {
     foreach ($variableName in @("ITOGURUMA_AUTH_TOKEN", "ITOGURUMA_DB", "ITOGURUMA_URL", "ITOGURUMA_CONFIG_DIR", "ITOGURUMA_LOG_DIR")) {
         [Environment]::SetEnvironmentVariable($variableName, $null, "User")
     }
-    function New-HookSettings {
-        param([string]$InboxArguments, [string]$ConsumerAgentId, [string[]]$Events)
-
-        $hookArguments = $InboxArguments + ' --consumer-agent ' + $ConsumerAgentId
-        $hookCommand = '"' + $cliPath + '" hook ' + $hookArguments + ' --db "' + $databasePath + '"'
-        $cliPowerShellPath = $cliPath.Replace("'", "''")
-        $databasePowerShellPath = $databasePath.Replace("'", "''")
-        $hookCommandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ''' + $cliPowerShellPath + ''' hook ' + $hookArguments + ' --db ''' + $databasePowerShellPath + '''"'
-        $hookEntry = @{
-            hooks = @(@{
-                type = "command"
-                command = $hookCommand
-                commandWindows = $hookCommandWindows
-                timeout = 15
-            })
-        }
-        $eventHooks = [ordered]@{}
-        foreach ($eventName in $Events) { $eventHooks[$eventName] = @($hookEntry) }
-        return @{ hooks = $eventHooks }
-    }
-    $examplesRoot = Join-Path $destinationRoot "examples"
-    New-Item -ItemType Directory -Force -Path $examplesRoot | Out-Null
-    New-HookSettings "--project-inbox" "claude-code" @("UserPromptSubmit") | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "claude-settings.json") -Encoding utf8
-    New-HookSettings "--agent codex-main" "codex-main" @("SessionStart", "UserPromptSubmit", "Stop") | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $examplesRoot "codex-hooks.json") -Encoding utf8
     if (!$SkipCodex) {
         $codexCandidates = @(Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin") `
             -Filter "codex.exe" -File -Recurse -ErrorAction SilentlyContinue |
@@ -334,8 +357,8 @@ try {
             Select-Object -ExpandProperty FullName)
         $codex = Find-ClientCommand "codex" $codexCandidates
         if ($null -ne $codex) {
-            & $codex.Source mcp remove itoguruma 2>$null | Out-Null
-            Invoke-ClientCommand $codex @("mcp", "add", "itoguruma", "--", $proxyPath, "--url", $mcpUrl)
+            & $cliPath configure codex --url $mcpUrl --proxy-path $proxyPath
+            if ($LASTEXITCODE -ne 0) { throw "Itoguruma Codex configuration failed." }
         }
     }
     if (!$SkipClaude) {
@@ -344,22 +367,18 @@ try {
             (Join-Path $env:USERPROFILE ".local\bin\claude.exe")
         )
         if ($null -ne $claude) {
-            $previousErrorActionPreference = $ErrorActionPreference
-            try {
-                $ErrorActionPreference = "Continue"
-                & $claude.Source mcp remove --scope user itoguruma 2>$null | Out-Null
-            }
-            finally {
-                $ErrorActionPreference = $previousErrorActionPreference
-            }
-            Invoke-ClientCommand $claude @(
-                "mcp", "add", "--transport", "stdio", "--scope", "user",
-                "itoguruma", "--", $proxyPath, "--url", $mcpUrl)
+            & $cliPath configure claude --url $mcpUrl --proxy-path $proxyPath
+            if ($LASTEXITCODE -ne 0) { throw "Itoguruma Claude Code configuration failed." }
         }
     }
 
     $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
     Remove-ItemProperty -Path $runKey -Name "ItogurumaServer" -ErrorAction SilentlyContinue
+    # Keep an enabled Viewer startup entry pointing at this installation; a tray start never re-registers it.
+    if ($null -ne (Get-ItemProperty -Path $runKey -Name "ItogurumaViewer" -ErrorAction SilentlyContinue)) {
+        $viewerStartupCommand = '"' + (Join-Path $destinationRoot "bin\viewer\itoguruma-viewer.exe") + '" --tray'
+        Set-ItemProperty -Path $runKey -Name "ItogurumaViewer" -Value $viewerStartupCommand
+    }
     $taskUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
     $taskArguments = '--config-dir "' + $configRoot + '" --log-dir "' + $logRoot + '"'
     $taskAction = New-ScheduledTaskAction -Execute $serverPath -Argument $taskArguments -WorkingDirectory (Split-Path $serverPath)
@@ -379,30 +398,65 @@ try {
         -Settings $taskSettings `
         -Description "Run the per-user Itoguruma MCP Streamable HTTP server." `
         -Force | Out-Null
-    $serverProcess = Start-Process `
-        -FilePath $serverPath `
-        -ArgumentList @("--config-dir", $configRoot, "--log-dir", $logRoot) `
-        -WorkingDirectory (Split-Path $serverPath) `
-        -WindowStyle Hidden `
-        -PassThru
     $healthUrl = $ServerUrl.TrimEnd("/") + "/health"
-    $serverReady = $false
-    for ($attempt = 1; $attempt -le 20; $attempt++) {
-        try {
-            $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
-            if ($health.status -eq "ok") {
-                $serverReady = $true
-                break
+    function Wait-ServerHealth {
+        param([int]$Attempts)
+        for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+            try {
+                $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
+                if ($health.status -eq "ok") { return $true }
             }
+            catch { }
+            Start-Sleep -Milliseconds 250
         }
-        catch {
-            if ($attempt -eq 20) { throw }
-        }
-        Start-Sleep -Milliseconds 250
+        return $false
     }
-    if (!$serverReady) { throw "Itoguruma.Server health check failed: $healthUrl" }
+    # Start through the scheduled task first. A server launched from the Windows Installer custom-action
+    # context cannot see some drive paths (for example CR files under a junction on another volume) even
+    # though it runs as the same user; the task starts it in the normal sign-in context.
+    $serverProcess = $null
+    Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    $serverReady = Wait-ServerHealth -Attempts 60
+    if ($serverReady) {
+        $serverProcess = Get-Process -Name "Itoguruma.Server" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -ieq $serverPath } | Select-Object -First 1
+    }
+    else {
+        # Fall back to a direct start so installation still succeeds; the next sign-in starts the task normally.
+        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        Get-Process -Name "Itoguruma.Server" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -ieq $serverPath } | Stop-Process -Force -ErrorAction SilentlyContinue
+        Write-Warning "The scheduled task did not start Itoguruma.Server; starting it directly. Some drive paths may be unavailable to the server until the next sign-in."
+        $serverProcess = Start-Process `
+            -FilePath $serverPath `
+            -ArgumentList @("--config-dir", $configRoot, "--log-dir", $logRoot) `
+            -WorkingDirectory (Split-Path $serverPath) `
+            -WindowStyle Hidden `
+            -PassThru
+        $serverReady = Wait-ServerHealth -Attempts 20
+    }
+    if (!$serverReady -or $null -eq $serverProcess) { throw "Itoguruma.Server health check failed: $healthUrl" }
     $serverProcess.Refresh()
     if ($serverProcess.HasExited) { throw "Itoguruma.Server exited after installation." }
+
+    Start-Process `
+        -FilePath $viewerPath `
+        -ArgumentList "--tray" `
+        -WorkingDirectory (Split-Path $viewerPath) `
+        -WindowStyle Hidden | Out-Null
+
+    if ($isRelocation -and (Test-Path -LiteralPath $previousRoot -PathType Container)) {
+        # The new installation is running; remove the previous binaries and documents that this package replaces.
+        # data, config, and logs stay at the previous root as a fallback copy of the migrated user data.
+        foreach ($item in @(Get-ChildItem -LiteralPath $extractRoot -Force)) {
+            $previousItem = Join-Path $previousRoot $item.Name
+            if (Test-Path -LiteralPath $previousItem) {
+                Remove-Item -LiteralPath $previousItem -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Write-Host ((Get-LocalizedText "Moved from" "移行元") + ": $previousRoot (" +
+            (Get-LocalizedText "data, config, and logs were kept there" "data、config、logsは移行元に残しています") + ")")
+    }
 
     Write-Host ((Get-LocalizedText "Itoguruma installed" "Itogurumaをインストールしました") + ": $destinationRoot")
     Write-Host ((Get-LocalizedText "Configuration" "設定") + ": $configRoot")
@@ -410,6 +464,7 @@ try {
     Write-Host ((Get-LocalizedText "Logs" "ログ") + ": $logRoot")
     Write-Host ((Get-LocalizedText "Database" "データベース") + ": $databasePath")
     Write-Host ((Get-LocalizedText "MCP endpoint" "MCPエンドポイント") + ": $mcpUrl")
+    $examplesRoot = Join-Path $destinationRoot "examples"
     Write-Host "Claude Code Hook example: $(Join-Path $examplesRoot 'claude-settings.json')"
     Write-Host "Codex Hook example: $(Join-Path $examplesRoot 'codex-hooks.json')"
     Write-Host "Message Viewer: $(Join-Path $destinationRoot 'bin\viewer\itoguruma-viewer.exe')"
