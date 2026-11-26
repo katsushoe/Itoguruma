@@ -21,6 +21,7 @@ public sealed class MainForm : Form
     private readonly ToolStripMenuItem _serverStartItem = new();
     private readonly ToolStripMenuItem _serverStopItem = new();
     private bool _serverOperationRunning;
+    private readonly StatusLed _statusLed = new();
     private readonly TextBox _databasePath = new()
     {
         Dock = DockStyle.Fill,
@@ -115,6 +116,7 @@ public sealed class MainForm : Form
             _timer.Stop();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
+            _statusLed.Dispose();
         };
         _messages.SelectionChanged += (_, _) => ShowSelectedMessage();
         _messages.CellDoubleClick += ShowMessageDetails;
@@ -234,6 +236,7 @@ public sealed class MainForm : Form
     private void ShowServerStatus(ServerStatus? status)
     {
         _serverStatusItem.Text = status is null ? L("Status: unknown", "状態: 未確認") : DescribeServerStatus(status);
+        _serverStatusItem.Image = _serverMenu.Image = _statusLed.For(status);
         _serverStartItem.Enabled = status?.State != ServerState.Running;
         _serverStopItem.Enabled = status?.State != ServerState.Stopped;
     }
