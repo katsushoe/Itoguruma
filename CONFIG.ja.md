@@ -38,7 +38,7 @@ Codex/Claude Codeの設定は`itoguruma configure codex|claude`が生成しま�
 
 ### Viewerのタスクトレイと更新
 
-インストーラーはViewerをタスクトレイで起動します。Viewerは閉じるボタンまたは最小化操作で画面を隠し、トレイアイコンをダブルクリックすると再表示します。右クリックメニューから設定、更新確認、終了を選べます。既定では自動更新とWindowsサインイン時の起動が有効です。スタートアップは現在のWindowsユーザーの`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`に登録します。Viewer設定はユーザー単位のJSONで、Serverの`appsettings.json`とは別です。
+インストーラーはViewerをタスクトレイで起動します。Viewerは閉じるボタンまたは最小化操作で画面を隠し、トレイアイコンをダブルクリックすると再表示します。右クリックメニューから設定、更新確認、MCPサーバー、終了を選べます。MCPサーバーのサブメニューは、`Itoguruma:ServerUrl`の`/health`への応答からサーバーの状態（稼働中と版、応答なし、停止中）を表示し、「状態を確認」「起動」「停止」を提供します。「起動」はインストーラーが登録したタスク`ItogurumaServer`を実行し、タスクがない場合は`bin\server\Itoguruma.Server.exe`を直接起動します。「停止」は確認後にタスクを終了し、このインストール先のサーバープロセスが残っていれば終了させます。停止中は、Itogurumaを使うCodexとClaude Codeのすべてのセッションが、再び起動するまで切断されます。既定では自動更新とWindowsサインイン時の起動が有効です。スタートアップは現在のWindowsユーザーの`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`に登録します。Viewer設定はユーザー単位のJSONで、Serverの`appsettings.json`とは別です。
 
 自動更新は起動時にGitHubの最新正式Releaseを確認します。現在版より新しい場合は対応するx64 MSIと`SHA256SUMS.txt`を一時フォルダーへダウンロードし、SHA-256が一致した場合だけWindows Installerを起動します。Release確認、ダウンロードまたは検証に失敗した場合も、現在のItogurumaは使用できます。更新を適用するとServerが再起動されます。
 

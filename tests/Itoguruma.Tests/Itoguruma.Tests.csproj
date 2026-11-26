@@ -17,5 +17,6 @@
     <Compile Include="../../src/Itoguruma.StopClaude/ClaudeProcessMatcher.cs" Link="StopClaude/ClaudeProcessMatcher.cs" />
     <Compile Include="../../src/Itoguruma.StopClaude/ProcessInfo.cs" Link="StopClaude/ProcessInfo.cs" />
     <Compile Include="../../src/Itoguruma.Viewer/ViewerSettings.cs" Link="Viewer/ViewerSettings.cs" />
+    <Compile Include="../../src/Itoguruma.Viewer/ServerController.cs" Link="Viewer/ServerController.cs" />
   </ItemGroup>
 </Project>

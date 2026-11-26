@@ -12,6 +12,15 @@ public sealed class MainForm : Form
     private readonly bool _startHidden;
     private bool _allowClose;
     private bool _checkingForUpdates;
+    private readonly ServerController _serverController = new(
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..")),
+        Environment.GetEnvironmentVariable("ITOGURUMA_CONFIG_DIR")
+            ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "config")));
+    private readonly ToolStripMenuItem _serverMenu = new();
+    private readonly ToolStripMenuItem _serverStatusItem = new() { Enabled = false };
+    private readonly ToolStripMenuItem _serverStartItem = new();
+    private readonly ToolStripMenuItem _serverStopItem = new();
+    private bool _serverOperationRunning;
     private readonly TextBox _databasePath = new()
     {
         Dock = DockStyle.Fill,
@@ -161,11 +170,82 @@ public sealed class MainForm : Form
         menu.Items.Add(L("Settings...", "設定..."), null, (_, _) => ShowSettings());
         menu.Items.Add(L("Check for updates", "更新を確認"), null, async (_, _) => await CheckForUpdatesAsync(showNoUpdate: true));
         menu.Items.Add(new ToolStripSeparator());
+        _serverMenu.Text = L("MCP server", "MCPサーバー");
+        _serverStartItem.Text = L("Start", "起動");
+        _serverStartItem.Click += async (_, _) => await RunServerOperationAsync(start: true);
+        _serverStopItem.Text = L("Stop", "停止");
+        _serverStopItem.Click += async (_, _) => await RunServerOperationAsync(start: false);
+        var checkItem = new ToolStripMenuItem(L("Check status", "状態を確認"));
+        checkItem.Click += async (_, _) => await RefreshServerStatusAsync(notify: true);
+        _serverMenu.DropDownItems.AddRange([_serverStatusItem, new ToolStripSeparator(), checkItem, _serverStartItem, _serverStopItem]);
+        _serverMenu.DropDownOpening += async (_, _) => await RefreshServerStatusAsync(notify: false);
+        ShowServerStatus(null);
+        menu.Items.Add(_serverMenu);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(L("Exit", "終了"), null, (_, _) => ExitApplication());
         _notifyIcon.Text = "Itoguruma";
         _notifyIcon.ContextMenuStrip = menu;
         _notifyIcon.DoubleClick += (_, _) => ShowWindow();
     }
+
+    private async Task RefreshServerStatusAsync(bool notify)
+    {
+        if (_serverOperationRunning) return;
+        var status = await _serverController.GetStatusAsync();
+        ShowServerStatus(status);
+        if (notify)
+            _notifyIcon.ShowBalloonTip(3000, "Itoguruma", DescribeServerStatus(status),
+                status.State == ServerState.Running ? ToolTipIcon.Info : ToolTipIcon.Warning);
+    }
+
+    private async Task RunServerOperationAsync(bool start)
+    {
+        if (_serverOperationRunning) return;
+        if (!start && MessageBox.Show(
+                L("Stopping the MCP server disconnects every Codex and Claude Code session that uses Itoguruma until it is started again. Stop the server?",
+                  "MCPサーバーを停止すると、再び起動するまでItogurumaを使うCodexとClaude Codeのすべてのセッションが切断されます。停止しますか？"),
+                "Itoguruma", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+            return;
+        _serverOperationRunning = true;
+        _serverStatusItem.Text = start ? L("Status: starting...", "状態: 起動中...") : L("Status: stopping...", "状態: 停止中...");
+        _serverStartItem.Enabled = _serverStopItem.Enabled = false;
+        ServerStatus status;
+        try
+        {
+            status = start ? await _serverController.StartAsync() : await _serverController.StopAsync();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            _state.Text = start ? L("Server start failed", "サーバーの起動に失敗しました") : L("Server stop failed", "サーバーの停止に失敗しました");
+            _details.Text = ex.Message;
+            _notifyIcon.ShowBalloonTip(4000, "Itoguruma", _state.Text + L(". Open the viewer for details.", "。詳細はViewerを開いてください。"), ToolTipIcon.Error);
+            status = await _serverController.GetStatusAsync();
+        }
+        finally
+        {
+            _serverOperationRunning = false;
+        }
+        ShowServerStatus(status);
+        var succeeded = start ? status.State == ServerState.Running : status.State == ServerState.Stopped;
+        _notifyIcon.ShowBalloonTip(3000, "Itoguruma", DescribeServerStatus(status),
+            succeeded ? ToolTipIcon.Info : ToolTipIcon.Warning);
+    }
+
+    private void ShowServerStatus(ServerStatus? status)
+    {
+        _serverStatusItem.Text = status is null ? L("Status: unknown", "状態: 未確認") : DescribeServerStatus(status);
+        _serverStartItem.Enabled = status?.State != ServerState.Running;
+        _serverStopItem.Enabled = status?.State != ServerState.Stopped;
+    }
+
+    private static string DescribeServerStatus(ServerStatus status) => status.State switch
+    {
+        ServerState.Running => string.IsNullOrEmpty(status.Version)
+            ? L("MCP server: running", "MCPサーバー: 稼働中")
+            : L($"MCP server: running ({status.Version})", $"MCPサーバー: 稼働中（{status.Version}）"),
+        ServerState.NotResponding => L("MCP server: not responding", "MCPサーバー: 応答なし"),
+        _ => L("MCP server: stopped", "MCPサーバー: 停止中")
+    };
 
     private void ShowWindow()
     {
