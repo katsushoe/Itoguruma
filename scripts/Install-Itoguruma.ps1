@@ -55,6 +55,24 @@ $logRoot = if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
 }
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("itoguruma-install-" + [guid]::NewGuid().ToString("N"))
 
+function Wait-FileUnlocked {
+    # Returns $true when the file is missing or can be opened exclusively within about 10 seconds.
+    param([string]$Path)
+    if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { return $true }
+    for ($attempt = 1; $attempt -le 40; $attempt++) {
+        try {
+            $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            $stream.Dispose()
+            return $true
+        }
+        catch [System.IO.IOException] {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    return $false
+}
+
 function Read-ExistingSettings {
     # Returns the first readable settings file among the candidates, or $null when none exists.
     param([string[]]$CandidatePaths)
@@ -238,26 +256,8 @@ try {
         throw "The existing Itoguruma.Server process did not stop within $ServerStopTimeoutSeconds seconds. Process IDs: $remainingProcessIds"
     }
     $installedServerPath = Join-Path $destinationRoot "bin\server\Itoguruma.Server.exe"
-    if (Test-Path -LiteralPath $installedServerPath) {
-        $serverUnlocked = $false
-        for ($attempt = 1; $attempt -le 40; $attempt++) {
-            try {
-                $serverStream = [System.IO.File]::Open(
-                    $installedServerPath,
-                    [System.IO.FileMode]::Open,
-                    [System.IO.FileAccess]::ReadWrite,
-                    [System.IO.FileShare]::None)
-                $serverStream.Dispose()
-                $serverUnlocked = $true
-                break
-            }
-            catch [System.IO.IOException] {
-                Start-Sleep -Milliseconds 250
-            }
-        }
-        if (!$serverUnlocked) {
-            throw "The existing Itoguruma.Server process did not release its executable."
-        }
+    if (!(Wait-FileUnlocked $installedServerPath)) {
+        throw "The existing Itoguruma.Server process did not release its executable."
     }
     # The tray Viewer keeps its executable locked; stop it before copying and restart it after installation.
     $viewerPath = Join-Path $destinationRoot "bin\viewer\itoguruma-viewer.exe"
@@ -276,6 +276,10 @@ try {
         $remainingViewerIds = ($runningViewers.Id -join ", ")
         throw "The existing Itoguruma Viewer process did not stop within $ServerStopTimeoutSeconds seconds. Process IDs: $remainingViewerIds"
     }
+    # A stopped process can keep its executable open briefly; wait until the file is writable before copying.
+    if (!(Wait-FileUnlocked $viewerPath)) {
+        throw "The existing Itoguruma Viewer process did not release its executable."
+    }
     $installedPackageProxyPath = Join-Path $destinationRoot $packageProxyRelativePath
     if ((Test-Path -LiteralPath $installedPackageProxyPath -PathType Leaf) -and
         ((Get-FileHash -LiteralPath $installedPackageProxyPath -Algorithm SHA256).Hash -eq
@@ -283,7 +287,18 @@ try {
         Remove-Item -LiteralPath $packageProxy[0].FullName -Force
     }
     New-Item -ItemType Directory -Force -Path $destinationRoot | Out-Null
-    Copy-Item -Path (Join-Path $extractRoot "*") -Destination $destinationRoot -Recurse -Force
+    # Another process (for example an antivirus scan) can hold a just-released file for a moment; retry the copy a few times.
+    for ($copyAttempt = 1; ; $copyAttempt++) {
+        try {
+            Copy-Item -Path (Join-Path $extractRoot "*") -Destination $destinationRoot -Recurse -Force
+            break
+        }
+        catch [System.IO.IOException] {
+            if ($copyAttempt -ge 5) { throw }
+            Write-Warning "A file was in use while copying the package; retrying ($copyAttempt/5): $($_.Exception.Message)"
+            Start-Sleep -Seconds 2
+        }
+    }
     New-Item -ItemType Directory -Force -Path $configRoot, $logRoot | Out-Null
     $settingsPath = Join-Path $configRoot "appsettings.json"
     $upgradeBackupRoot = Join-Path $env:LOCALAPPDATA "Itoguruma Upgrade Backup"
