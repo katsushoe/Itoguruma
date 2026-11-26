@@ -112,9 +112,9 @@ The group is stored in the Server's `appsettings.json`. The packaged defaults ar
 - Purpose: choose the shared root used to validate formal change-request files.
 - Type: nullable directory path.
 - Default and omission: `null`; change-request delivery is disabled.
-- Constraints: each requested file must exist below `inbox/<target_project>/` under this root and pass the canonical change-request validation rules.
+- Constraints: each requested file must exist below `inbox/<target_project>/` under this root and pass the canonical change-request validation rules. Symbolic links and junctions in both this root and the requested `cr_path` are resolved to their final targets before the comparison, so a junction alias and its real path are interchangeable (for example `F:\Workspace\Projects\CRs` as a junction to `E:\Workspace\Projects\CRs`). A link that resolves outside `inbox/<target_project>/` under the real root is rejected. `inspect_change_request` reports the path as requested.
 - Environment override: use the standard .NET key `Itoguruma__CrRoot`. The legacy-looking `ITOGURUMA_CR_ROOT` name is not read by the current runtime.
-- Example: `"CrRoot": "F:\\Workspace\\Projects\\CRs"` (replace with the shared root available to the Server process).
+- Example: `"CrRoot": "E:\\Workspace\\Projects\\CRs"` (replace with the shared root available to the Server process; prefer the real path over a junction alias).
 
 ## Logging Settings
 

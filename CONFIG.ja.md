@@ -112,9 +112,9 @@ Serverの`appsettings.json`に保存します。パッケージの既定値は�
 - 用途：正式なCRファイルの検証に使う共有ルートを指定します。
 - 型：null許容ディレクトリパス。
 - 既定値・省略時：`null`。CR配送は無効です。
-- 制約：対象ファイルはこのルートの`inbox/<target_project>/`配下に存在し、正規のCR検証に合格する必要があります。
+- 制約：対象ファイルはこのルートの`inbox/<target_project>/`配下に存在し、正規のCR検証に合格する必要があります。このルートと要求された`cr_path`の両方について、シンボリックリンクとジャンクションを最終的な実体へ解決してから比較するため、ジャンクションの別名と実体のパスはどちらでも受け付けます（例：`E:\Workspace\Projects\CRs`を指すジャンクション`F:\Workspace\Projects\CRs`）。実体のルートの`inbox/<target_project>/`の外へ解決されるリンクは拒否します。`inspect_change_request`は要求されたとおりのパスを返します。
 - 環境変数による上書き：.NET標準キー`Itoguruma__CrRoot`を使用します。旧名風の`ITOGURUMA_CR_ROOT`は読み込まれません。
-- 例：`"CrRoot": "F:\\Workspace\\Projects\\CRs"`（Serverから参照可能な共有ルートに置き換え）。
+- 例：`"CrRoot": "E:\\Workspace\\Projects\\CRs"`（Serverから参照可能な共有ルートに置き換え。ジャンクションの別名ではなく実体のパスを推奨）。
 
 ## ログ設定
 
