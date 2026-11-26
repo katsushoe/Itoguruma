@@ -22,7 +22,7 @@
 
 ## ファイルの生成
 
-インストーラーはServer同梱の`appsettings.json`テンプレートを設定先へコピーし、`Language`、`ServerUrl`、`DatabasePath`を書き込みます。Bearerトークンは含めません。Serverを直接起動するときは`--config-dir <directory>`と`--log-dir <directory>`を指定できます。省略時は実行ファイルのディレクトリとその`logs`サブディレクトリです。インストール済みタスクは両方を明示指定します。インストーラーはインストール後のServerをこのタスクから起動します。MSIのインストール処理から直接起動したServerは、同じユーザーでも一部のドライブのパス（別ボリュームへのジャンクション配下のCRファイルなど）を参照できないためです。タスクからの起動が正常にならない場合だけServerを直接起動し、警告を出します。この場合、次回のサインインでタスクから起動し直されるまで、一部のパスを参照できないことがあります。
+インストーラーはServer同梱の`appsettings.json`テンプレートに既存の設定を合成して設定先へ書き込み、既存の設定にない場合だけ`Language`、`ServerUrl`、`DatabasePath`を設定します（[`-ConfigDirectory`](#config-directory)参照）。Bearerトークンは含めません。Serverを直接起動するときは`--config-dir <directory>`と`--log-dir <directory>`を指定できます。省略時は実行ファイルのディレクトリとその`logs`サブディレクトリです。インストール済みタスクは両方を明示指定します。インストーラーはインストール後のServerをこのタスクから起動します。MSIのインストール処理から直接起動したServerは、同じユーザーでも一部のドライブのパス（別ボリュームへのジャンクション配下のCRファイルなど）を参照できないためです。タスクからの起動が正常にならない場合だけServerを直接起動し、警告を出します。この場合、次回のサインインでタスクから起動し直されるまで、一部のパスを参照できないことがあります。
 
 Codex/Claude Codeの設定は`itoguruma configure codex|claude`が生成します。ローカルProxyのパス、MCPエンドポイント、Hookコマンドを含み、資格情報は含みません。他のPCから設定をコピーする場合は実行ファイルのパスを確認してください。
 
@@ -174,6 +174,7 @@ Serverのフレームワークログの最低重要度を指定します。Serve
 
 - 型：ディレクトリパス。既定`<InstallDirectory>\config`。
 - 省略時：既定ディレクトリを作成して`appsettings.json`を書き込みます。Serverタスクへ`--config-dir`を渡します。
+- アップグレードと再インストールでは既存の設定を保持します。インストーラーは書き込む前に既存の`appsettings.json`を読み（MSIのアップグレードバックアップ、設定ディレクトリ、移行時は移行元のルートの順）、同梱テンプレートへ上書き合成します。`CrRoot`、`Language`、`ServerUrl`、`DatabasePath`、独自のセクションを含む既存の値はすべて残り、既存の設定にないキーだけが同梱の既定値になります。`-Language`と`-ServerUrl`は、既存の設定にその値がない場合だけ使います。後続のアップグレードバックアップの復元は、設定ディレクトリ内のほかのファイルをコピーしますが、合成済みの`appsettings.json`は置き換えません。
 - 例：`-ConfigDirectory 'D:\\AppData\\Itoguruma\\config'`。
 
 <a id="log-directory"></a>

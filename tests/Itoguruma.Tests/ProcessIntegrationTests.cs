@@ -1064,6 +1064,20 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void Installer_WhenUpgrading_MergesExistingSettingsInsteadOfOverwritingThem()
+    {
+        var installer = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "scripts", "Install-Itoguruma.ps1"));
+
+        Assert.DoesNotContain("-Destination (Join-Path $configRoot \"appsettings.json\")", installer, StringComparison.Ordinal);
+        var readIndex = installer.IndexOf("$existingSettings = Read-ExistingSettings", StringComparison.Ordinal);
+        var mergeIndex = installer.IndexOf("Merge-Settings $settings $existingSettings", StringComparison.Ordinal);
+        var writeIndex = installer.IndexOf("[System.IO.File]::WriteAllText($settingsPath", StringComparison.Ordinal);
+        Assert.True(readIndex >= 0 && mergeIndex > readIndex && writeIndex > mergeIndex,
+            "The installer must read the existing settings, merge them, and only then write appsettings.json.");
+        Assert.Contains("Where-Object { $_.Name -ine \"appsettings.json\" }", installer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Installer_WhenTokenIsAlreadyConfigured_DoesNotRotateIt()
     {
         var installer = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "scripts", "Install-Itoguruma.ps1"));

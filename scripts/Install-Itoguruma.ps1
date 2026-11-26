@@ -55,6 +55,45 @@ $logRoot = if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
 }
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("itoguruma-install-" + [guid]::NewGuid().ToString("N"))
 
+function Read-ExistingSettings {
+    # Returns the first readable settings file among the candidates, or $null when none exists.
+    param([string[]]$CandidatePaths)
+    foreach ($candidate in $CandidatePaths) {
+        if (!(Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+        try { return Get-Content -LiteralPath $candidate -Raw | ConvertFrom-Json }
+        catch { Write-Warning "Ignoring unreadable settings file: $candidate" }
+    }
+    return $null
+}
+
+function Merge-Settings {
+    # Copies every value from $Existing over $Defaults, recursing into nested sections; keys only in $Defaults keep their default.
+    param($Defaults, $Existing)
+    foreach ($property in $Existing.PSObject.Properties) {
+        $default = $Defaults.PSObject.Properties[$property.Name]
+        if ($null -ne $default -and $default.Value -is [System.Management.Automation.PSCustomObject] -and
+            $property.Value -is [System.Management.Automation.PSCustomObject]) {
+            Merge-Settings $default.Value $property.Value
+        }
+        elseif ($null -ne $default) {
+            $Defaults.($property.Name) = $property.Value
+        }
+        else {
+            $Defaults | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value
+        }
+    }
+}
+
+function Restore-UserDirectory {
+    # Copies a saved user directory back, except appsettings.json, which is already merged into the new configuration.
+    param([string]$Source, [string]$Destination)
+    if (!(Test-Path -LiteralPath $Source -PathType Container)) { return }
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    Get-ChildItem -LiteralPath $Source -Force |
+        Where-Object { $_.Name -ine "appsettings.json" } |
+        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force }
+}
+
 function Find-ClientCommand {
     param([string]$Name, [string[]]$CandidatePaths)
 
@@ -246,19 +285,29 @@ try {
     New-Item -ItemType Directory -Force -Path $destinationRoot | Out-Null
     Copy-Item -Path (Join-Path $extractRoot "*") -Destination $destinationRoot -Recurse -Force
     New-Item -ItemType Directory -Force -Path $configRoot, $logRoot | Out-Null
-    Copy-Item -LiteralPath (Join-Path $destinationRoot "bin\server\appsettings.json") `
-        -Destination (Join-Path $configRoot "appsettings.json") -Force
-    Remove-Item -LiteralPath (Join-Path $destinationRoot "bin\server\appsettings.json") -Force
     $settingsPath = Join-Path $configRoot "appsettings.json"
-    $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-    $settings.Itoguruma.Language = $Language
-    $settings.Itoguruma.ServerUrl = $ServerUrl
-    $settingsJson = $settings | ConvertTo-Json -Depth 10
-    [System.IO.File]::WriteAllText($settingsPath, $settingsJson, (New-Object System.Text.UTF8Encoding($false)))
+    $upgradeBackupRoot = Join-Path $env:LOCALAPPDATA "Itoguruma Upgrade Backup"
+    # Keep the user's settings across upgrades: read the existing file before writing anything, then merge it
+    # over the packaged defaults so values such as CrRoot survive and newly added keys receive their defaults.
+    $existingSettings = Read-ExistingSettings @(
+        (Join-Path $upgradeBackupRoot "config\appsettings.json"),
+        $settingsPath,
+        (Join-Path $previousRoot "config\appsettings.json"))
+    $packagedSettingsPath = Join-Path $destinationRoot "bin\server\appsettings.json"
+    $settings = Get-Content -LiteralPath $packagedSettingsPath -Raw | ConvertFrom-Json
+    Remove-Item -LiteralPath $packagedSettingsPath -Force
+    if ($null -ne $existingSettings) { Merge-Settings $settings $existingSettings }
+    # Installer arguments only fill values the existing settings do not already define.
+    if ([string]::IsNullOrWhiteSpace([string]$settings.Itoguruma.Language)) { $settings.Itoguruma.Language = $Language }
+    if ([string]::IsNullOrWhiteSpace([string]$settings.Itoguruma.ServerUrl)) { $settings.Itoguruma.ServerUrl = $ServerUrl }
+    $Language = [string]$settings.Itoguruma.Language
+    $ServerUrl = [string]$settings.Itoguruma.ServerUrl
     $dataRoot = Join-Path $destinationRoot "data"
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
-    $databasePath = Join-Path $dataRoot "messages.db"
-    $settings.Itoguruma.DatabasePath = $databasePath
+    if ([string]::IsNullOrWhiteSpace([string]$settings.Itoguruma.DatabasePath)) {
+        $settings.Itoguruma.DatabasePath = Join-Path $dataRoot "messages.db"
+    }
+    $databasePath = [string]$settings.Itoguruma.DatabasePath
     $settingsJson = $settings | ConvertTo-Json -Depth 10
     [System.IO.File]::WriteAllText($settingsPath, $settingsJson, (New-Object System.Text.UTF8Encoding($false)))
     $legacyRoot = Join-Path $env:LOCALAPPDATA "Programs\Itoguruma"
@@ -272,23 +321,16 @@ try {
         }
     }
 
-    $upgradeBackupRoot = Join-Path $env:LOCALAPPDATA "Itoguruma Upgrade Backup"
     if (Test-Path -LiteralPath $upgradeBackupRoot -PathType Container) {
         foreach ($name in @("data", "config", "logs")) {
-            $backupPath = Join-Path $upgradeBackupRoot $name
-            if (Test-Path -LiteralPath $backupPath) {
-                Copy-Item -LiteralPath $backupPath -Destination $destinationRoot -Recurse -Force
-            }
+            Restore-UserDirectory (Join-Path $upgradeBackupRoot $name) (Join-Path $destinationRoot $name)
         }
         Remove-Item -LiteralPath $upgradeBackupRoot -Recurse -Force
     }
     elseif ($isRelocation) {
         # Without an MSI upgrade backup, carry the user data over from the previous install root directly.
         foreach ($name in @("data", "config", "logs")) {
-            $previousPath = Join-Path $previousRoot $name
-            if (Test-Path -LiteralPath $previousPath) {
-                Copy-Item -LiteralPath $previousPath -Destination $destinationRoot -Recurse -Force
-            }
+            Restore-UserDirectory (Join-Path $previousRoot $name) (Join-Path $destinationRoot $name)
         }
     }
     if ($isRelocation) {
