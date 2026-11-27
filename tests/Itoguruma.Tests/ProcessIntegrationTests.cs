@@ -1410,6 +1410,12 @@ public sealed class ProcessIntegrationTests : IDisposable
             && arguments.FirstOrDefault() is not ("-h" or "--help" or "version" or "--version" or "auth" or "configure" or "unconfigure");
         var ownsServer = usesServer && server is null && serverUrlOverride is null;
         if (ownsServer) server = await StartMcpServerAsync(databasePath);
+        var isolatedCredentialTarget = usesServer && server is null && serverUrlOverride is not null
+            ? $"Itoguruma/Tests/{Guid.NewGuid():N}"
+            : null;
+        var isolatedCredentialStore = isolatedCredentialTarget is null
+            ? null
+            : new WindowsCredentialTokenStore(isolatedCredentialTarget);
         var assemblyPath = FindApplicationAssembly(application);
         var startInfo = new ProcessStartInfo("dotnet")
         {
@@ -1424,15 +1430,17 @@ public sealed class ProcessIntegrationTests : IDisposable
         {
             startInfo.ArgumentList.Add("--url");
             startInfo.ArgumentList.Add(serverUrlOverride ?? $"{server!.ServerUrl}/mcp");
-            if (server is not null)
+            var credentialTarget = server?.CredentialTarget ?? isolatedCredentialTarget;
+            if (credentialTarget is not null)
             {
                 startInfo.ArgumentList.Add("--credential-target");
-                startInfo.ArgumentList.Add(server.CredentialTarget);
+                startInfo.ArgumentList.Add(credentialTarget);
             }
         }
 
         try
         {
+            isolatedCredentialStore?.Save(new StoredAuthenticationToken(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N")));
             using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
             await process.StandardInput.WriteAsync(standardInput);
             process.StandardInput.Close();
@@ -1444,6 +1452,7 @@ public sealed class ProcessIntegrationTests : IDisposable
         }
         finally
         {
+            isolatedCredentialStore?.Delete();
             if (ownsServer && server is not null) await server.DisposeAsync();
         }
     }
