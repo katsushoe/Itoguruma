@@ -80,6 +80,78 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
     public async Task<ToolData<IReadOnlyList<Project>>> ListProjects(CancellationToken cancellationToken = default) =>
         new(await service.ListProjectsAsync(cancellationToken));
 
+    /// <summary>Project IDを指定して登録内容を返します。</summary>
+    [McpServerTool(Name = "get_project", ReadOnly = true, UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<Project>))]
+    [Description("Return the registered project matching the canonical project_id, or an error when it is unknown.")]
+    public async Task<CallToolResult> GetProject(string project_id, CancellationToken cancellationToken = default)
+    {
+        var project = await service.GetProjectAsync(project_id, cancellationToken);
+        return project is null
+            ? CreateResult(new ToolError(ProjectErrorCodes.UnknownProject, "validation/project",
+                "The project is not registered.", "Call list_projects and use a registered canonical project_id.", false), isError: true)
+            : CreateResult(project);
+    }
+
+    /// <summary>ProjectとInboxを登録します。</summary>
+    [McpServerTool(Name = "add_project", UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<Project>))]
+    [Description("Register a project and its inbox using the same canonical registry used by CLI project add.")]
+    public async Task<CallToolResult> AddProject(string project_id, string inbox_agent_id,
+        string? display_name = null, CancellationToken cancellationToken = default)
+    {
+        try { return CreateResult(await service.AddProjectAsync(new(project_id, display_name, inbox_agent_id), cancellationToken)); }
+        catch (ProjectOperationException exception) { return CreateProjectError(exception); }
+        catch (ArgumentException exception)
+        {
+            return CreateResult(new ToolError("invalid_project", "validation/project", exception.Message,
+                "Correct the project_id or supplied project fields and retry.", false), isError: true);
+        }
+    }
+
+    /// <summary>登録済みProjectの表示名またはInboxを更新します。</summary>
+    [McpServerTool(Name = "update_project", UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<Project>))]
+    [Description("Update the display name or inbox agent for a registered project.")]
+    public async Task<CallToolResult> UpdateProject(string project_id, string? display_name = null,
+        string? inbox_agent_id = null, CancellationToken cancellationToken = default)
+    {
+        try { return CreateResult(await service.UpdateProjectAsync(new(project_id, display_name, inbox_agent_id), cancellationToken)); }
+        catch (ProjectOperationException exception) { return CreateProjectError(exception); }
+        catch (ArgumentException exception)
+        {
+            return CreateResult(new ToolError("invalid_project", "validation/project", exception.Message,
+                "Correct the project_id or supplied project fields and retry.", false), isError: true);
+        }
+    }
+
+    /// <summary>Projectの有効状態を変更します。</summary>
+    [McpServerTool(Name = "set_project_enabled", UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<Project>))]
+    [Description("Enable or disable a registered project inbox.")]
+    public async Task<CallToolResult> SetProjectEnabled(string project_id, bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        try { return CreateResult(await service.SetProjectEnabledAsync(project_id, enabled, cancellationToken)); }
+        catch (ProjectOperationException exception) { return CreateProjectError(exception); }
+    }
+
+    /// <summary>ProjectとInboxを登録解除します。</summary>
+    [McpServerTool(Name = "delete_project", Destructive = true, UseStructuredContent = true,
+        OutputSchemaType = typeof(ToolData<ProjectDeleteResult>))]
+    [Description("Delete a project and its inbox when no retained messages or deliveries reference them.")]
+    public async Task<CallToolResult> DeleteProject(string project_id, CancellationToken cancellationToken = default)
+    {
+        try { return CreateResult(new ProjectDeleteResult(await service.DeleteProjectAsync(project_id, cancellationToken))); }
+        catch (ProjectOperationException exception) { return CreateProjectError(exception); }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return CreateResult(new ToolError("project_referenced", "sqlite/table/write/reference_key",
+                "The project inbox is referenced by retained messages or deliveries.",
+                "Delete the related history first, then retry project deletion.", false), isError: true);
+        }
+    }
+
     /// <summary>エージェント登録を削除します。</summary>
     [McpServerTool(Name = "unregister_agent", UseStructuredContent = true,
         OutputSchemaType = typeof(ToolData<UnregisterResult>))]
@@ -349,6 +421,16 @@ public sealed class ItogurumaTools(MessagingService service, AuthenticationToken
             IsError = isError
         };
     }
+
+    private static CallToolResult CreateProjectError(ProjectOperationException exception) =>
+        CreateResult(new ProjectOperationToolError(
+            exception.ErrorCode,
+            "validation/project",
+            exception.Message,
+            "Call list_projects, verify the canonical project_id and inbox_agent_id, then retry.",
+            false,
+            exception.AttemptedProjectId,
+            exception.Candidates), isError: true);
 }
 
 /// <summary>MCP構造化出力の互換ラッパーです。</summary>
@@ -365,6 +447,19 @@ public sealed record AcknowledgementResult(bool Acked);
 
 /// <summary>エージェント削除結果です。</summary>
 public sealed record UnregisterResult(bool Unregistered);
+
+/// <summary>Project登録操作の結果です。</summary>
+public sealed record ProjectDeleteResult(bool Deleted);
+
+/// <summary>Project管理の修正候補を含む構造化エラーです。</summary>
+public sealed record ProjectOperationToolError(
+    string ErrorCode,
+    string Category,
+    string Summary,
+    string SuggestedAction,
+    bool Retryable,
+    string? AttemptedProjectId,
+    IReadOnlyList<ProjectCandidate> Candidates);
 
 /// <summary>CLI hook互換のコンテキストです。</summary>
 public sealed record HookContextResult(string? Context, string? AgentId, bool ShouldStop, IReadOnlyList<Message> Messages);

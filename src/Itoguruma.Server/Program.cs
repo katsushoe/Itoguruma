@@ -37,6 +37,8 @@ static async Task<int> RunServerAsync(string[] args)
         Args = args,
         ContentRootPath = configDirectory
     });
+    builder.Logging.ClearProviders();
+    builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
     var serverUrl = builder.Configuration["Itoguruma:ServerUrl"]
         ?? throw new InvalidOperationException("Itoguruma:ServerUrl is required.");
     if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri)

@@ -86,7 +86,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         string[] callToolResultTools =
         [
             "register_agent", "register_project_inbox", "unregister_agent",
-            "delete_agent_history", "inspect_change_request", "rotate_auth_token"
+            "delete_agent_history", "inspect_change_request", "rotate_auth_token",
+            "get_project", "add_project", "update_project", "set_project_enabled", "delete_project"
         ];
 
         foreach (var name in callToolResultTools)
@@ -247,6 +248,27 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal("moyai", project.GetProperty("projectId").GetString());
         Assert.Equal("project-inbox-moyai", project.GetProperty("inboxAgentId").GetString());
         Assert.True(project.GetProperty("enabled").GetBoolean());
+    }
+
+    [Fact]
+    public async Task McpServer_ProjectManagementTools_UseTheSharedRegistry()
+    {
+        var databasePath = Path.Combine(_directory, "mcp-project-management.db");
+        var result = await RunMcpAsync([
+            ToolRequest(1, "add_project", new
+                { project_id = "kotodama", inbox_agent_id = "project-inbox-kotodama", display_name = "Kotodama" }),
+            ToolRequest(2, "get_project", new { project_id = "kotodama" }),
+            ToolRequest(3, "update_project", new { project_id = "kotodama", display_name = "Kotodama Knowledge" }),
+            ToolRequest(4, "set_project_enabled", new { project_id = "kotodama", enabled = false }),
+            ToolRequest(5, "delete_project", new { project_id = "kotodama" })
+        ], databasePath);
+
+        Assert.All(result.Output, response => Assert.False(response.RootElement.TryGetProperty("error", out _)));
+        Assert.Equal("project-inbox-kotodama", StructuredData(result.Output[0]).GetProperty("inboxAgentId").GetString());
+        Assert.Equal("kotodama", StructuredData(result.Output[1]).GetProperty("projectId").GetString());
+        Assert.Equal("Kotodama Knowledge", StructuredData(result.Output[2]).GetProperty("displayName").GetString());
+        Assert.False(StructuredData(result.Output[3]).GetProperty("enabled").GetBoolean());
+        Assert.True(StructuredData(result.Output[4]).GetProperty("deleted").GetBoolean());
     }
 
     [Fact]
@@ -552,10 +574,11 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.RegisterAgentAsync("sender", "test");
         await service.RegisterAgentAsync("recipient", "test");
         await service.SendMessageAsync(new("sender", ["recipient"], "prompt message", "hook", "codex"));
+        await using var server = await StartMcpServerAsync(databasePath);
 
         var prompt = await RunAsync("itoguruma",
             ["hook", "--agent", "recipient", "--consumer-agent", "worker-a"], databasePath,
-            "{\"hook_event_name\":\"UserPromptSubmit\"}");
+            "{\"hook_event_name\":\"UserPromptSubmit\"}", server);
 
         Assert.Equal(0, prompt.ExitCode);
         Assert.Contains("prompt message", prompt.StandardOutput, StringComparison.Ordinal);
@@ -563,7 +586,7 @@ public sealed class ProcessIntegrationTests : IDisposable
 
         var stop = await RunAsync("itoguruma",
             ["hook", "--agent", "recipient", "--consumer-agent", "worker-a", "--lease-seconds", "-1"],
-            databasePath, "{\"hook_event_name\":\"Stop\"}");
+            databasePath, "{\"hook_event_name\":\"Stop\"}", server);
 
         Assert.Equal(2, stop.ExitCode);
         Assert.Contains("stop message", stop.StandardError, StringComparison.Ordinal);
@@ -582,10 +605,11 @@ public sealed class ProcessIntegrationTests : IDisposable
         var repository = Directory.CreateDirectory(Path.Combine(_directory, "HookProj"));
         Directory.CreateDirectory(Path.Combine(repository.FullName, ".git"));
         var workingDirectory = Directory.CreateDirectory(Path.Combine(repository.FullName, "src", "nested")).FullName;
+        await using var server = await StartMcpServerAsync(databasePath);
 
         var prompt = await RunAsync("itoguruma",
             ["hook", "--project-inbox", "--consumer-agent", "claude-code"], databasePath,
-            JsonSerializer.Serialize(new { hook_event_name = "UserPromptSubmit", cwd = workingDirectory }));
+            JsonSerializer.Serialize(new { hook_event_name = "UserPromptSubmit", cwd = workingDirectory }), server);
 
         Assert.Equal(0, prompt.ExitCode);
         Assert.Contains("project message", prompt.StandardOutput, StringComparison.Ordinal);
@@ -606,10 +630,11 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.InitializeAsync();
         var repository = Directory.CreateDirectory(Path.Combine(_directory, "UnregisteredProj"));
         Directory.CreateDirectory(Path.Combine(repository.FullName, ".git"));
+        await using var server = await StartMcpServerAsync(databasePath);
 
         var result = await RunAsync("itoguruma",
             ["hook", "--project-inbox", "--consumer-agent", "claude-code"], databasePath,
-            JsonSerializer.Serialize(new { hook_event_name = "UserPromptSubmit", cwd = repository.FullName }));
+            JsonSerializer.Serialize(new { hook_event_name = "UserPromptSubmit", cwd = repository.FullName }), server);
 
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(string.Empty, result.StandardOutput.Trim());
@@ -621,10 +646,11 @@ public sealed class ProcessIntegrationTests : IDisposable
         var databasePath = Path.Combine(_directory, "project-hook-conflict.db");
         var service = new MessagingService(new SqliteMessageStore(databasePath));
         await service.InitializeAsync();
+        await using var server = await StartMcpServerAsync(databasePath);
 
         var result = await RunAsync("itoguruma",
             ["hook", "--project-inbox", "--agent", "recipient", "--consumer-agent", "claude-code"], databasePath,
-            "{\"hook_event_name\":\"UserPromptSubmit\"}");
+            "{\"hook_event_name\":\"UserPromptSubmit\"}", server);
 
         Assert.Equal(2, result.ExitCode);
     }
@@ -638,20 +664,20 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.InitializeAsync();
         await service.RegisterAgentAsync("sender", "test");
         await service.RegisterAgentAsync("recipient", "test");
-
+        await using var server = await StartMcpServerAsync(databasePath);
         var sends = await Task.WhenAll(Enumerable.Range(0, messageCount).Select(index =>
             RunAsync("itoguruma",
             [
                 "send", "--from", "sender", "--to", "recipient", "--thread", "process-stress",
                 "--provider", "codex", "--body", $"message-{index}",
                 "--idempotency-key", $"process-{index}"
-            ], databasePath, string.Empty)));
+            ], databasePath, string.Empty, server)));
 
         Assert.All(sends, result => Assert.Equal(0, result.ExitCode));
         var messageIds = sends.Select(result =>
         {
             using var document = JsonDocument.Parse(result.StandardOutput);
-            return document.RootElement.GetProperty("message_id").GetString();
+            return document.RootElement.GetProperty("messageId").GetString();
         });
         Assert.Equal(messageCount, messageIds.Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(messageCount, (await service.GetMessagesAsync("recipient", limit: messageCount)).Count);
@@ -666,14 +692,15 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.RegisterAgentAsync("sender", "test");
         await service.RegisterAgentAsync("recipienta", "test");
         await service.RegisterAgentAsync("recipientb", "test");
+        await using var server = await StartMcpServerAsync(databasePath);
 
         var send = await RunAsync("itoguruma",
         [
             "send", "--from", "sender", "--to", "recipienta", "--to", "recipientb",
             "--provider", "codex", "--thread", "symmetry", "--body", "shared message"
-        ], databasePath, string.Empty);
+        ], databasePath, string.Empty, server);
         var history = await RunAsync("itoguruma",
-            ["history", "--thread", "symmetry"], databasePath, string.Empty);
+            ["history", "--thread", "symmetry"], databasePath, string.Empty, server);
 
         Assert.Equal(0, send.ExitCode);
         Assert.Equal(0, history.ExitCode);
@@ -693,15 +720,17 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.InitializeAsync();
         await service.RegisterAgentAsync("sender", "test");
         await service.AddProjectAsync(new("moyai", "Moyai", "project-inbox-moyai"));
+        await using var server = await StartMcpServerAsync(databasePath);
 
         var result = await RunAsync("itoguruma",
         [
             "send", "--from", "sender", "--to", "moyai-codex-root",
             "--provider", "codex", "--thread", "invalid-project", "--body", "blocked"
-        ], databasePath, string.Empty);
+        ], databasePath, string.Empty, server);
 
         Assert.Equal(2, result.ExitCode);
-        var jsonStart = result.StandardError.IndexOf('{', StringComparison.Ordinal);
+        var errorPropertyIndex = result.StandardError.IndexOf("\"error_code\"", StringComparison.Ordinal);
+        var jsonStart = errorPropertyIndex < 0 ? -1 : result.StandardError.LastIndexOf('{', errorPropertyIndex);
         Assert.True(jsonStart >= 0, result.StandardError);
         using var document = JsonDocument.Parse(result.StandardError[jsonStart..]);
         Assert.Equal(ProjectErrorCodes.InvalidProjectId,
@@ -719,9 +748,10 @@ public sealed class ProcessIntegrationTests : IDisposable
         await service.RegisterAgentAsync("target", "test");
         await service.RegisterAgentAsync("other", "test");
         await service.SendMessageAsync(new("target", ["other"], "keep", "cli-delete", "codex"));
+        await using var server = await StartMcpServerAsync(databasePath);
 
         var result = await RunAsync("itoguruma",
-            ["delete-agent-history", "--agent", "target", "--dry-run"], databasePath, string.Empty);
+            ["delete-agent-history", "--agent", "target", "--dry-run"], databasePath, string.Empty, server);
 
         Assert.Equal(0, result.ExitCode);
         using var document = JsonDocument.Parse(result.StandardOutput);
@@ -733,26 +763,46 @@ public sealed class ProcessIntegrationTests : IDisposable
     [Fact]
     public async Task AgentCli_WhenProviderIsMissing_RejectsSend()
     {
+        var databasePath = Path.Combine(_directory, "cli-provider-missing.db");
+        await using var server = await StartMcpServerAsync(databasePath);
         var result = await RunAsync("itoguruma",
             ["send", "--from", "sender", "--to", "recipient", "--thread", "missing", "--body", "blocked"],
-            Path.Combine(_directory, "cli-provider-missing.db"), string.Empty);
+            databasePath, string.Empty, server);
 
         Assert.Equal(2, result.ExitCode);
         Assert.Contains("--provider", result.StandardError, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task AgentCli_WhenDatabaseCannotBeOpened_HandlesExceptionAtApplicationBoundary()
+    public async Task AgentCli_WhenServerIsUnavailable_HandlesExceptionAtApplicationBoundary()
     {
-        var databasePath = Path.Combine(_directory, "database-directory");
-        Directory.CreateDirectory(databasePath);
-
-        var result = await RunAsync("itoguruma", ["agents"], databasePath, string.Empty);
+        var result = await RunAsync("itoguruma", ["agents"], Path.Combine(_directory, "unavailable.db"),
+            string.Empty, serverUrlOverride: "http://127.0.0.1:1/mcp");
 
         Assert.Equal(2, result.ExitCode);
         Assert.Contains("CommandFailure", result.StandardError, StringComparison.Ordinal);
         Assert.Contains("Itoguruma could not complete the command", result.StandardError, StringComparison.Ordinal);
         Assert.DoesNotContain("Unhandled exception.", result.StandardError, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("UserPromptSubmit")]
+    [InlineData("Stop")]
+    public async Task AgentHook_WhenServerIsUnavailable_DoesNotBlockTheClient(string eventName)
+    {
+        var repository = Directory.CreateDirectory(Path.Combine(_directory, "HookUnavailable" + eventName));
+        Directory.CreateDirectory(Path.Combine(repository.FullName, ".git"));
+
+        var result = await RunAsync("itoguruma",
+            ["hook", "--project-inbox", "--consumer-agent", "claude-code"],
+            Path.Combine(_directory, "hook-unavailable.db"),
+            JsonSerializer.Serialize(new { hook_event_name = eventName, cwd = repository.FullName }),
+            serverUrlOverride: "http://127.0.0.1:1/mcp");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.StandardOutput.Trim());
+        Assert.Contains("HookServerUnavailable", result.StandardError, StringComparison.Ordinal);
+        Assert.DoesNotContain("CommandFailure", result.StandardError, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -763,6 +813,15 @@ public sealed class ProcessIntegrationTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         Assert.Equal($"itoguruma {ProductInfo.Version}", result.StandardOutput.Trim());
         Assert.False(File.Exists(Path.Combine(_directory, "version.db")));
+    }
+
+    [Fact]
+    public async Task AgentCli_WhenHelpIsRequested_ListsClientConfigurationCommands()
+    {
+        var result = await RunAsync("itoguruma", ["--help"], Path.Combine(_directory, "help.db"), string.Empty);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("configure|unconfigure codex|claude", result.StandardOutput, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -990,7 +1049,8 @@ public sealed class ProcessIntegrationTests : IDisposable
         var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
 
         Assert.Contains("$packageProxyRelativePath", installer, StringComparison.Ordinal);
-        Assert.Contains("--transport\", \"stdio", installer, StringComparison.Ordinal);
+        Assert.Contains("configure codex --url $mcpUrl --proxy-path $proxyPath", installer, StringComparison.Ordinal);
+        Assert.Contains("configure claude --url $mcpUrl --proxy-path $proxyPath", installer, StringComparison.Ordinal);
         Assert.DoesNotContain("--bearer-token-env-var", installer, StringComparison.Ordinal);
         Assert.Contains("npm\\claude.cmd", installer, StringComparison.Ordinal);
         Assert.Contains(".local\\bin\\claude.exe", installer, StringComparison.Ordinal);
@@ -1001,6 +1061,20 @@ public sealed class ProcessIntegrationTests : IDisposable
             var content = File.ReadAllText(Path.Combine(repositoryRoot, document));
             Assert.Contains("mcp-proxy", content, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public void Installer_WhenUpgrading_MergesExistingSettingsInsteadOfOverwritingThem()
+    {
+        var installer = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "scripts", "Install-Itoguruma.ps1"));
+
+        Assert.DoesNotContain("-Destination (Join-Path $configRoot \"appsettings.json\")", installer, StringComparison.Ordinal);
+        var readIndex = installer.IndexOf("$existingSettings = Read-ExistingSettings", StringComparison.Ordinal);
+        var mergeIndex = installer.IndexOf("Merge-Settings $settings $existingSettings", StringComparison.Ordinal);
+        var writeIndex = installer.IndexOf("[System.IO.File]::WriteAllText($settingsPath", StringComparison.Ordinal);
+        Assert.True(readIndex >= 0 && mergeIndex > readIndex && writeIndex > mergeIndex,
+            "The installer must read the existing settings, merge them, and only then write appsettings.json.");
+        Assert.Contains("Where-Object { $_.Name -ine \"appsettings.json\" }", installer, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1019,26 +1093,34 @@ public sealed class ProcessIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void Installer_WhenGeneratingHookExamples_UsesClientSpecificEvents()
+    public void Installer_WhenConfiguringHooks_UsesCliAndClientSpecificEvents()
     {
         var repositoryRoot = FindRepositoryRoot();
         var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
         var claudeExample = File.ReadAllText(Path.Combine(repositoryRoot, ".claude", "settings.example.json"));
+        var codexExample = File.ReadAllText(Path.Combine(repositoryRoot, ".codex", "hooks.example.json"));
         using var claudeJson = JsonDocument.Parse(claudeExample);
+        using var codexJson = JsonDocument.Parse(codexExample);
 
-        Assert.Contains(
-            "New-HookSettings \"--project-inbox\" \"claude-code\" @(\"UserPromptSubmit\")",
-            installer,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "New-HookSettings \"--agent codex-main\" \"codex-main\" @(\"SessionStart\", \"UserPromptSubmit\", \"Stop\")",
-            installer,
-            StringComparison.Ordinal);
+        Assert.Contains("configure codex", installer, StringComparison.Ordinal);
+        Assert.Contains("configure claude", installer, StringComparison.Ordinal);
 
         var claudeHooks = claudeJson.RootElement.GetProperty("hooks");
         Assert.True(claudeHooks.TryGetProperty("UserPromptSubmit", out _));
         Assert.False(claudeHooks.TryGetProperty("SessionStart", out _));
         Assert.False(claudeHooks.TryGetProperty("Stop", out _));
+        var codexHooks = codexJson.RootElement.GetProperty("hooks");
+        Assert.True(codexHooks.TryGetProperty("SessionStart", out _));
+        Assert.True(codexHooks.TryGetProperty("UserPromptSubmit", out _));
+        Assert.True(codexHooks.TryGetProperty("Stop", out _));
+    }
+
+    [Fact]
+    public void Uninstaller_WhenRemovingProduct_UsesCliToRemoveClientSettings()
+    {
+        var uninstaller = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "scripts", "Uninstall-Itoguruma.ps1"));
+        Assert.Contains("unconfigure $client", uninstaller, StringComparison.Ordinal);
+        Assert.Contains("@(\"codex\", \"claude\")", uninstaller, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1059,10 +1141,76 @@ public sealed class ProcessIntegrationTests : IDisposable
         var repositoryRoot = FindRepositoryRoot();
         var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
 
-        Assert.Contains("$serverProcess = Start-Process", installer, StringComparison.Ordinal);
+        // The scheduled task starts the server in the normal sign-in context; a direct start is only the fallback.
+        var taskStart = installer.IndexOf("Start-ScheduledTask -TaskName $taskName", StringComparison.Ordinal);
+        var fallbackStart = installer.IndexOf("$serverProcess = Start-Process", StringComparison.Ordinal);
+        Assert.True(taskStart >= 0 && taskStart < fallbackStart);
+        Assert.Contains("$serverReady = Wait-ServerHealth -Attempts 60", installer, StringComparison.Ordinal);
+        Assert.Contains("Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue\n        Get-Process -Name \"Itoguruma.Server\"",
+            installer.ReplaceLineEndings("\n"), StringComparison.Ordinal);
         Assert.Contains("-FilePath $serverPath", installer, StringComparison.Ordinal);
         Assert.Contains("if ($serverProcess.HasExited)", installer, StringComparison.Ordinal);
-        Assert.DoesNotContain("Start-ScheduledTask -TaskName $taskName", installer, StringComparison.Ordinal);
+        Assert.Contains("$viewerPath = Join-Path $destinationRoot", installer, StringComparison.Ordinal);
+        Assert.Contains("-FilePath $viewerPath", installer, StringComparison.Ordinal);
+        Assert.Contains("-ArgumentList \"--tray\"", installer, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InstallerAndUninstaller_StopRunningViewerBeforeTouchingBinaries()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
+        var uninstaller = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Uninstall-Itoguruma.ps1"));
+
+        const string viewerQuery = "Get-Process -Name \"itoguruma-viewer\"";
+        var installerStop = installer.IndexOf(viewerQuery, StringComparison.Ordinal);
+        var installerCopy = installer.IndexOf("Copy-Item -Path (Join-Path $extractRoot \"*\")", StringComparison.Ordinal);
+        var installerRestart = installer.IndexOf("-FilePath $viewerPath", StringComparison.Ordinal);
+        Assert.True(installerStop >= 0 && installerStop < installerCopy && installerCopy < installerRestart);
+        Assert.Contains("Where-Object { $viewerPaths -contains $_.Path }", installer, StringComparison.Ordinal);
+        Assert.Contains("Itoguruma Viewer process did not stop within", installer, StringComparison.Ordinal);
+
+        var uninstallerStop = uninstaller.IndexOf(viewerQuery, StringComparison.Ordinal);
+        var uninstallerRemove = uninstaller.IndexOf("Remove-Item -LiteralPath $managedPath", StringComparison.Ordinal);
+        Assert.True(uninstallerStop >= 0 && uninstallerStop < uninstallerRemove);
+        Assert.Contains("Where-Object { $_.Path -ieq $viewerPath }", uninstaller, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Installer_SupportsConfigurableAndRecordedInstallDirectory()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var package = File.ReadAllText(Path.Combine(repositoryRoot, "installer", "Package.wxs"));
+        var installCommand = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma-Msi.cmd"));
+        var uninstallCommand = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Uninstall-Itoguruma-Msi.cmd"));
+        var installer = File.ReadAllText(Path.Combine(repositoryRoot, "scripts", "Install-Itoguruma.ps1"));
+
+        // The MSI reads the recorded root, defaults to C:\Itoguruma, and records the chosen root.
+        Assert.Contains("<Property Id=\"ITOGURUMA_INSTALL_DIR\" Secure=\"yes\" />", package, StringComparison.Ordinal);
+        Assert.Contains("Name=\"InstallDirectory\" Type=\"raw\"", package, StringComparison.Ordinal);
+        Assert.Contains("Value=\"C:\\Itoguruma\"", package, StringComparison.Ordinal);
+        Assert.Contains("Name=\"InstallDirectory\"\n                           Type=\"string\" Value=\"[ITOGURUMA_INSTALL_DIR]\"",
+            package.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        // The upgrade backup copies from the previous root, never from a hard-coded drive.
+        Assert.Contains("cp &apos;[ITOGURUMA_PREVIOUS_INSTALL_DIR]&apos; $b", package, StringComparison.Ordinal);
+        Assert.DoesNotContain("cp C:\\Itoguruma $b", package, StringComparison.Ordinal);
+        Assert.Contains("&quot;[ITOGURUMA_INSTALL_DIR]&quot; &quot;[ITOGURUMA_PREVIOUS_INSTALL_DIR]&quot;", package, StringComparison.Ordinal);
+        Assert.Contains("Uninstall-Itoguruma.ps1&quot; &quot;[ITOGURUMA_PREVIOUS_INSTALL_DIR]&quot;", package, StringComparison.Ordinal);
+
+        Assert.Contains("-InstallDirectory \"%INSTALL_DIRECTORY%\" -PreviousInstallDirectory \"%PREVIOUS_INSTALL_DIRECTORY%\"",
+            installCommand, StringComparison.Ordinal);
+        Assert.Contains("-InstallDirectory \"%INSTALL_DIRECTORY%\"", uninstallCommand, StringComparison.Ordinal);
+
+        // Relocation migrates user data, re-points the database, drops old PATH entries, and removes old binaries.
+        Assert.Contains("[string]$PreviousInstallDirectory = \"\"", installer, StringComparison.Ordinal);
+        Assert.Contains("elseif ($isRelocation)", installer, StringComparison.Ordinal);
+        Assert.Contains("$settings.Itoguruma.DatabasePath = $destinationRoot +", installer, StringComparison.Ordinal);
+        Assert.Contains("StartsWith($previousBinRoot", installer, StringComparison.Ordinal);
+        Assert.Contains("Join-Path $previousRoot \"bin\\server\\Itoguruma.Server.exe\"", installer, StringComparison.Ordinal);
+        Assert.Contains("Set-ItemProperty -Path $runKey -Name \"ItogurumaViewer\" -Value $viewerStartupCommand", installer, StringComparison.Ordinal);
+        var healthCheck = installer.IndexOf("if (!$serverReady -or $null -eq $serverProcess)", StringComparison.Ordinal);
+        var oldBinaryCleanup = installer.IndexOf("$previousItem = Join-Path $previousRoot $item.Name", StringComparison.Ordinal);
+        Assert.True(healthCheck >= 0 && healthCheck < oldBinaryCleanup);
     }
 
     [Fact]
@@ -1249,13 +1397,25 @@ public sealed class ProcessIntegrationTests : IDisposable
         return port;
     }
 
-    private static async Task<ProcessResult> RunAsync(
+    private async Task<ProcessResult> RunAsync(
         string application,
         IReadOnlyList<string> arguments,
         string databasePath,
-        string standardInput)
+        string standardInput,
+        RunningMcpServer? server = null,
+        string? serverUrlOverride = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+        var usesServer = application == "itoguruma"
+            && arguments.FirstOrDefault() is not ("-h" or "--help" or "version" or "--version" or "auth" or "configure" or "unconfigure");
+        var ownsServer = usesServer && server is null && serverUrlOverride is null;
+        if (ownsServer) server = await StartMcpServerAsync(databasePath);
+        var isolatedCredentialTarget = usesServer && server is null && serverUrlOverride is not null
+            ? $"Itoguruma/Tests/{Guid.NewGuid():N}"
+            : null;
+        var isolatedCredentialStore = isolatedCredentialTarget is null
+            ? null
+            : new WindowsCredentialTokenStore(isolatedCredentialTarget);
         var assemblyPath = FindApplicationAssembly(application);
         var startInfo = new ProcessStartInfo("dotnet")
         {
@@ -1266,19 +1426,35 @@ public sealed class ProcessIntegrationTests : IDisposable
         };
         startInfo.ArgumentList.Add(assemblyPath);
         foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
-        startInfo.ArgumentList.Add("--db");
-        startInfo.ArgumentList.Add(databasePath);
-        startInfo.Environment["ITOGURUMA_DB"] = databasePath;
+        if (usesServer)
+        {
+            startInfo.ArgumentList.Add("--url");
+            startInfo.ArgumentList.Add(serverUrlOverride ?? $"{server!.ServerUrl}/mcp");
+            var credentialTarget = server?.CredentialTarget ?? isolatedCredentialTarget;
+            if (credentialTarget is not null)
+            {
+                startInfo.ArgumentList.Add("--credential-target");
+                startInfo.ArgumentList.Add(credentialTarget);
+            }
+        }
 
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
-        await process.StandardInput.WriteAsync(standardInput);
-        process.StandardInput.Close();
-        var standardOutput = process.StandardOutput.ReadToEndAsync();
-        var standardError = process.StandardError.ReadToEndAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        await process.WaitForExitAsync(timeout.Token);
-
-        return new(process.ExitCode, await standardOutput, await standardError, []);
+        try
+        {
+            isolatedCredentialStore?.Save(new StoredAuthenticationToken(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N")));
+            using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process did not start.");
+            await process.StandardInput.WriteAsync(standardInput);
+            process.StandardInput.Close();
+            var standardOutput = process.StandardOutput.ReadToEndAsync();
+            var standardError = process.StandardError.ReadToEndAsync();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await process.WaitForExitAsync(timeout.Token);
+            return new(process.ExitCode, await standardOutput, await standardError, []);
+        }
+        finally
+        {
+            isolatedCredentialStore?.Delete();
+            if (ownsServer && server is not null) await server.DisposeAsync();
+        }
     }
 
     private static string FindApplicationAssembly(string application)

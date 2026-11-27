@@ -13,7 +13,7 @@ Itogurumaは、Codexでは`SessionStart`、`UserPromptSubmit`、`Stop`、Claude 
 | `--project-inbox` | 作業ディレクトリを含むGitリポジトリ名をInvariant lowercaseへ変換したIDの、有効な登録Projectです。作業ディレクトリはhook入力の`cwd`から読み、ない場合はプロセスのディレクトリを使います。`git worktree`内では主リポジトリ名を使います。リポジトリ外、Project IDとして無効な名前、有効な登録Projectがない場合は何も出力せず終了コード`0`で終了します。 |
 | `--agent <inboxAgentId>` | 指定した受信箱です。 |
 
-生成されるClaude Codeの設定例は`--project-inbox --consumer-agent claude-code`を使うため、ユーザー単位の1つのHookで各プロジェクト自身の受信箱を表示します。コンテキストの見出しにはACKに必要な`agent_id`と`consumer_agent_id`を示し、メッセージの`leaseId`と組み合わせてACKします。MCPツール`get_hook_context`も`working_directory`または`agent_id`で同じ選択を受け付けます。
+生成される設定例は`--project-inbox`を使い、Claude Codeでは`--consumer-agent claude-code`、Codexでは`--consumer-agent codex`を指定するため、クライアントごとにユーザー単位の1つのHookで各プロジェクト自身の受信箱を表示します。どちらのクライアントもHook入力に`cwd`を渡します。コンテキストの見出しにはACKに必要な`agent_id`と`consumer_agent_id`を示し、メッセージの`leaseId`と組み合わせてACKします。MCPツール`get_hook_context`も`working_directory`または`agent_id`で同じ選択を受け付けます。
 
 ## 生成される設定例
 
@@ -40,6 +40,7 @@ itoguruma ack --agent <inboxAgentId> --consumer-agent <consumerAgentId> --messag
 ## 障害時の確認と復旧
 
 - **出力なし・終了コード`0`:** lease可能なメッセージがない場合、または`--project-inbox`から有効なProjectを解決できない場合の正常動作です。イベントが`UserPromptSubmit`であること、Hook入力の`cwd`が対象Gitリポジトリ内であること、該当Project IDが有効であること（`itoguruma project list`）、Hookとサーバーが同じDBを使うことを確認します。
+- **サーバーに接続できない場合:** Itogurumaサーバーが停止中・起動途中などで接続できないとき、Hookは何も出力せず終了コード`0`で終了し、クライアントのプロンプトやターンを止めません。stderrには`[HookServerUnavailable]`の警告だけを出します。未配信のメッセージはDBに残り、サーバー復旧後の次のHookで取得されます。サーバーの状態は`http://127.0.0.1:47631/health`で確認します。
 - **非ゼロで終了:** Hookプロセスの終了コードとstderrをローカルで確認します。CLIは時刻付きの`[CommandFailure]`と例外詳細をstderrへ出し、終了コード`2`を返します。オプション、DBアクセス、Project解決のどこで失敗したかを調べます。資格情報や非公開メッセージ本文を共有ログへ貼り付けないでください。
 - **クライアント設定を確認:** 統合後の設定JSONを検証し、更新後も実行ファイルのパスが存在することを確認します。無関係なHook設定を保持し、設定変更後はClaude Codeを再起動します。
 - **Claude Codeを介さず再現:** クライアントと同じCLI、DBへHookイベントJSONを送ります。

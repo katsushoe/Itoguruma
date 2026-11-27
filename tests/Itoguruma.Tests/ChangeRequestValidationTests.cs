@@ -107,6 +107,83 @@ public sealed class ChangeRequestValidationTests : IDisposable
         Assert.Equal("対応中", result.CurrentStatus);
     }
 
+    [Fact]
+    public async Task InspectChangeRequest_WhenPayloadUsesJunctionAliasOfRealRoot_Accepts()
+    {
+        var path = CreateCr();
+        var alias = CreateJunctionAlias(_directory);
+        var aliasPath = Path.Combine(alias, "inbox", "Itoguruma", Path.GetFileName(path));
+        var validator = new ChangeRequestValidator(_directory);
+
+        var result = await validator.InspectAsync(Payload(aliasPath));
+
+        Assert.Equal(aliasPath, result.CrPath);
+        Assert.True(result.StatusMatches);
+    }
+
+    [Fact]
+    public async Task InspectChangeRequest_WhenRootIsJunctionAliasAndPayloadUsesRealPath_Accepts()
+    {
+        var path = CreateCr();
+        var alias = CreateJunctionAlias(_directory);
+        var validator = new ChangeRequestValidator(alias);
+
+        var result = await validator.InspectAsync(Payload(path));
+
+        Assert.Equal(path, result.CrPath);
+    }
+
+    [Fact]
+    public async Task InspectChangeRequest_WhenJunctionInsideInboxPointsOutsideRoot_IsRejected()
+    {
+        CreateCr();
+        var outside = Path.Combine(Path.GetTempPath(), "itoguruma-cr-outside", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        await File.WriteAllTextAsync(Path.Combine(outside, "CR-test.md"), ValidCr);
+        var link = Path.Combine(_directory, "inbox", "Itoguruma", "linked");
+        CreateJunction(link, outside);
+        try
+        {
+            var validator = new ChangeRequestValidator(_directory);
+
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                validator.InspectAsync(Payload(Path.Combine(link, "CR-test.md"))));
+        }
+        finally
+        {
+            Directory.Delete(link);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    private readonly List<string> _aliases = [];
+
+    private string CreateJunctionAlias(string target)
+    {
+        var alias = Path.Combine(Path.GetTempPath(), "itoguruma-cr-alias", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.GetDirectoryName(alias)!);
+        CreateJunction(alias, target);
+        _aliases.Add(alias);
+        return alias;
+    }
+
+    private static void CreateJunction(string link, string target)
+    {
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            Path.Combine(Environment.SystemDirectory, "cmd.exe"))
+        {
+            ArgumentList = { "/d", "/c", "mklink", "/J", link, target },
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        })!;
+        process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, $"mklink /J failed: {error}");
+    }
+
     private async Task<MessagingService> CreateServiceAsync()
     {
         var store = new SqliteMessageStore(Path.Combine(_directory, "messages.db"));
@@ -159,6 +236,8 @@ public sealed class ChangeRequestValidationTests : IDisposable
 
     public void Dispose()
     {
+        // ジャンクションはリンク自体だけを削除します（参照先は消しません）。
+        foreach (var alias in _aliases.Where(Directory.Exists)) Directory.Delete(alias);
         if (Directory.Exists(_directory)) Directory.Delete(_directory, true);
     }
 }

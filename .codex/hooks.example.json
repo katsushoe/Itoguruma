@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "itoguruma hook --agent codex-main",
-            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& 'itoguruma' hook --agent codex-main\"",
+            "command": "itoguruma hook --project-inbox --consumer-agent codex",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& 'itoguruma' hook --project-inbox --consumer-agent codex\"",
             "timeout": 15
           }
         ]
@@ -18,8 +18,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "itoguruma hook --agent codex-main",
-            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& 'itoguruma' hook --agent codex-main\"",
+            "command": "itoguruma hook --project-inbox --consumer-agent codex",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& 'itoguruma' hook --project-inbox --consumer-agent codex\"",
             "timeout": 15
           }
         ]
@@ -30,8 +30,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "itoguruma hook --agent codex-main",
-            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& 'itoguruma' hook --agent codex-main\"",
+            "command": "itoguruma hook --project-inbox --consumer-agent codex",
+            "commandWindows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& 'itoguruma' hook --project-inbox --consumer-agent codex\"",
             "timeout": 15
           }
         ]

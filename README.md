@@ -18,7 +18,7 @@ itoguruma inbox --agent claude-main --consumer-agent claude-root --lease-seconds
 
 ## Installation
 
-GitHub Releases provide the recommended x64 MSI, `Install-Itoguruma.ps1`, and a self-contained ZIP. The MSI prompts for English or Japanese and supports silent installation with `ITOGURUMA_LANGUAGE=en` or `ITOGURUMA_LANGUAGE=ja`. Installers require no .NET SDK. Source builds require the .NET 8 SDK:
+GitHub Releases provide the recommended x64 MSI, `Install-Itoguruma.ps1`, and a self-contained ZIP. The MSI prompts for English or Japanese and supports silent installation with `ITOGURUMA_LANGUAGE=en` or `ITOGURUMA_LANGUAGE=ja`. The default install root is `C:\Itoguruma`; set `ITOGURUMA_INSTALL_DIR` to choose or move it (see [CONFIG.md](CONFIG.md#-installdirectory)). Installers require no .NET SDK. Source builds require the .NET 8 SDK:
 
 ```powershell
 dotnet restore tests/Itoguruma.Tests/Itoguruma.Tests.csproj
@@ -29,6 +29,8 @@ dotnet test tests/Itoguruma.Tests/Itoguruma.Tests.csproj -c Release --no-build
 ## Configuration
 
 The server reads runtime settings from `config/appsettings.json` and its bearer token from Windows Credential Manager. Codex and Claude connect through the packaged local stdio proxy. See [CONFIG.md](CONFIG.md).
+
+The message Viewer stays in the notification area. By default, it starts when you sign in to Windows and checks GitHub Releases for a newer stable version. Right-click its notification-area icon and choose **Settings** to change startup or automatic update behavior. Before installing an update, it verifies the MSI against the release's `SHA256SUMS.txt`.
 
 ## Usage
 

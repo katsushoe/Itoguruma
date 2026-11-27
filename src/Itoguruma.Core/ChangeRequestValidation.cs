@@ -30,8 +30,9 @@ public sealed class ChangeRequestValidator(string crRoot)
     private static readonly string[] RequiredHeadings = ["## 背景", "## 依頼内容", "## 完了条件", "## 受け取り結果"];
     private static readonly HashSet<string> AllowedStatuses = new(StringComparer.Ordinal)
         { "未着手", "対応中", "完了", "分割済み" };
-    private readonly string _crRoot = Path.GetFullPath(
-        string.IsNullOrWhiteSpace(crRoot) ? throw new ArgumentException("CR root is required.", nameof(crRoot)) : crRoot);
+    // ジャンクション等を解決した実体パスで比較し、同じ共有CR領域を別表記（例: F:のジャンクションとE:の実体）で指定しても受け付けます。
+    private readonly string _crRoot = ResolveRealPath(Path.GetFullPath(
+        string.IsNullOrWhiteSpace(crRoot) ? throw new ArgumentException("CR root is required.", nameof(crRoot)) : crRoot));
 
     /// <summary>CR payloadを解析し、ファイルと内容の整合性を検証します。</summary>
     public async Task<ChangeRequestInspection> InspectAsync(
@@ -41,8 +42,8 @@ public sealed class ChangeRequestValidator(string crRoot)
     {
         var payload = ParsePayload(payloadJson);
         ValidatePayload(payload);
-        var path = ValidatePath(payload);
-        var content = await File.ReadAllTextAsync(path, cancellationToken);
+        var (path, realPath) = ValidatePath(payload);
+        var content = await File.ReadAllTextAsync(realPath, cancellationToken);
         var source = ReadField(content, "依頼元");
         var target = ReadField(content, "依頼先");
         var priority = ReadField(content, "優先度");
@@ -91,11 +92,13 @@ public sealed class ChangeRequestValidator(string crRoot)
             throw new ArgumentException("target_project must be a single directory name.", nameof(payload));
     }
 
-    private string ValidatePath(ChangeRequestPayload payload)
+    /// <summary>要求されたパス（報告用）と、ジャンクション等を解決した実体パス（検証・読取用）を返します。</summary>
+    private (string RequestedPath, string RealPath) ValidatePath(ChangeRequestPayload payload)
     {
         if (!Path.IsPathFullyQualified(payload.CrPath))
             throw new ArgumentException("cr_path must be an absolute path.", nameof(payload));
-        var path = Path.GetFullPath(payload.CrPath);
+        var requested = Path.GetFullPath(payload.CrPath);
+        var path = ResolveRealPath(requested);
         var expectedDirectory = Path.GetFullPath(Path.Combine(_crRoot, "inbox", payload.TargetProject));
         var relative = Path.GetRelativePath(expectedDirectory, path);
         if (relative.StartsWith("..", StringComparison.Ordinal)
@@ -109,10 +112,32 @@ public sealed class ChangeRequestValidator(string crRoot)
         var parent = Path.GetDirectoryName(path);
         if (!string.Equals(parent, expectedDirectory, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("cr_path target directory does not match target_project.", nameof(payload));
+        // 解決後も再解析ポイントが残る場合（解決できないリンク）は拒否します。
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0
             || (File.GetAttributes(expectedDirectory) & FileAttributes.ReparsePoint) != 0)
             throw new ArgumentException("cr_path must not traverse a symbolic link or junction.", nameof(payload));
-        return path;
+        return (requested, path);
+    }
+
+    /// <summary>
+    /// パスの各要素をルートから順にたどり、シンボリックリンクとジャンクションを最終的な実体へ置き換えた絶対パスを返します。
+    /// 存在しない要素以降はそのまま連結します。
+    /// </summary>
+    internal static string ResolveRealPath(string fullPath)
+    {
+        var root = Path.GetPathRoot(fullPath) ?? throw new ArgumentException("Path must be rooted.", nameof(fullPath));
+        var current = root;
+        var parts = fullPath[root.Length..].Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+        foreach (var part in parts)
+        {
+            current = Path.Combine(current, part);
+            FileSystemInfo info = Directory.Exists(current) ? new DirectoryInfo(current) : new FileInfo(current);
+            if (!info.Exists || info.LinkTarget is null) continue;
+            var target = info.ResolveLinkTarget(returnFinalTarget: true);
+            if (target is not null) current = Path.GetFullPath(target.FullName);
+        }
+        return current;
     }
 
     private static string ReadField(string content, string name)

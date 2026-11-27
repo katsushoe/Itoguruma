@@ -13,7 +13,7 @@ Pass exactly one inbox selector to `itoguruma hook`:
 | `--project-inbox` | The enabled registered project whose ID is the name of the Git repository containing the working directory, in invariant lowercase. The working directory is read from `cwd` in the hook input, or the process directory when absent. Inside a `git worktree`, the main repository name is used. When the directory is outside a repository, the name is not a valid Project ID, or no enabled project is registered, the hook prints nothing and exits with `0`. |
 | `--agent <inboxAgentId>` | The specified inbox. |
 
-The generated Claude Code example uses `--project-inbox --consumer-agent claude-code`, so one user-level hook shows each project's own inbox. The context header names `agent_id` and `consumer_agent_id`, which are required with the message `leaseId` for acknowledgement. The MCP tool `get_hook_context` accepts the same selection through `working_directory` or `agent_id`.
+The generated examples use `--project-inbox` with `--consumer-agent claude-code` for Claude Code and `--consumer-agent codex` for Codex, so one user-level hook per client shows each project's own inbox. Both clients pass `cwd` in the hook input. The context header names `agent_id` and `consumer_agent_id`, which are required with the message `leaseId` for acknowledgement. The MCP tool `get_hook_context` accepts the same selection through `working_directory` or `agent_id`.
 
 ## Generated examples
 
@@ -40,6 +40,7 @@ Register the receiving agent, send a test message, and trigger a configured life
 ## Troubleshooting
 
 - **No context and exit code `0`:** This is expected when there are no leasable messages or `--project-inbox` cannot resolve an enabled project. Confirm the event is `UserPromptSubmit`, the hook input `cwd` points inside the intended Git repository, that repository's Project ID is enabled (`itoguruma project list`), and the hook and server use the same database.
+- **Server unreachable:** When the Itoguruma server cannot be reached, for example because it is stopped or still starting, the hook prints no context and exits `0`, so it never blocks the client's prompt or turn. It writes only a `[HookServerUnavailable]` warning to stderr. Undelivered messages stay in the database and are leased by the next hook run after the server recovers. Check the server at `http://127.0.0.1:47631/health`.
 - **Hook command exits nonzero:** Capture the hook process exit code and stderr locally. The CLI writes a timestamped `[CommandFailure]` entry to stderr and returns `2`; use its exception details to distinguish invalid options, database access, and project-resolution failures. Do not paste credentials or private message bodies into shared logs.
 - **Check the client configuration:** Validate the merged settings JSON, confirm the configured executable path still exists after an upgrade, and preserve unrelated hook entries. Restart Claude Code after changing its settings.
 - **Reproduce outside Claude Code:** Send a JSON hook event to the same CLI and database configured for the client:
